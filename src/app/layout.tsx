@@ -14,8 +14,28 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Chat with @earlyspark",
-  description: "An AI experiment in professional representation",
+  metadataBase: new URL('https://earlyspark.com'),
+  title: ".+:*earlyspark*:+.",
+  description: "this is where i live",
+  openGraph: {
+    title: ".+:*earlyspark*:+.",
+    description: "this is where i live",
+    url: '/',
+    siteName: 'earlyspark',
+    images: [
+      {
+        url: '/20250914_diamond.png',
+        alt: 'Diamond',
+      },
+    ],
+    type: 'website',
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: ".+:*earlyspark*:+.",
+    description: "this is where i live",
+    images: ['/20250914_diamond.png'],
+  },
   icons: {
     icon: '/favicon.ico',
     shortcut: '/favicon.ico',
