@@ -82,7 +82,7 @@ export class SkillsChunker extends BaseChunker {
       const matches = Array.from(content.matchAll(pattern))
       
       if (matches.length > 1) {
-        let sections: string[] = []
+        const sections: string[] = []
         
         for (let i = 0; i < matches.length; i++) {
           const match = matches[i]
@@ -141,7 +141,7 @@ export class SkillsChunker extends BaseChunker {
     
     if (firstLine) {
       // Clean up common prefixes and suffixes
-      let category = firstLine
+      const category = firstLine
         .replace(/^[#\*\-•\d\.\)\s]*/, '')
         .replace(/[:]\s*.*$/, '')
         .replace(/^\*\*([^*]+)\*\*.*/, '$1')
@@ -326,7 +326,7 @@ export class SkillsChunker extends BaseChunker {
       const matches = Array.from(content.matchAll(pattern))
       
       if (matches.length > 2) { // Need multiple subgroups
-        let lastIndex = 0
+        const lastIndex = 0
         
         for (let i = 0; i < matches.length; i++) {
           const match = matches[i]

@@ -91,7 +91,7 @@ export async function GET(request: NextRequest) {
       if (conversation.messages && Array.isArray(conversation.messages)) {
         totalMessages += conversation.messages.length
 
-        conversation.messages.forEach((message: any) => {
+        conversation.messages.forEach((message: { role: string; content: string }) => {
           if (message.role === 'user') {
             userMessages++
             // Track popular questions (first 100 chars)

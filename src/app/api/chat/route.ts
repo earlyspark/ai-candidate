@@ -69,7 +69,7 @@ export async function POST(request: NextRequest) {
         response: cacheResult.response!.response,
         cached: true,
         similarity: cacheResult.similarity,
-        sources: (cacheResult.response?.searchResults || []).map((r: any) => ({
+        sources: (cacheResult.response?.searchResults || []).map((r: { chunk?: { id?: number; category?: string }; id?: number; category?: string }) => ({
           id: r.chunk?.id ?? r.id,
           category: r.chunk?.category ?? r.category,
           similarity: r.similarity ?? r.finalScore ?? null,

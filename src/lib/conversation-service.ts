@@ -9,7 +9,7 @@ export interface Message {
   content: string
   timestamp: Date
   metadata?: {
-    searchResults?: any[]
+    searchResults?: { id: number; category: string; similarity: number }[]
     processingTime?: number
     tokenCount?: number
   }
@@ -114,7 +114,7 @@ export class ConversationService {
         return null
       }
 
-      const messages = (conversation.messages || []).map((msg: any) => ({
+      const messages = (conversation.messages || []).map((msg: { role: string; content: string; timestamp: string; metadata?: Record<string, unknown> }) => ({
         ...msg,
         timestamp: new Date(msg.timestamp)
       }))

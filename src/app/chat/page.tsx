@@ -59,7 +59,7 @@ export default function ChatPage() {
   }, [])
 
   // Handle context updates from chat interface
-  const handleContextUpdate = (status: any) => {
+  const handleContextUpdate = (status: { level: string; tokensUsed: number; warning?: string }) => {
     // This could be used for additional UI updates based on context status
     console.log('Context status updated:', status)
   }

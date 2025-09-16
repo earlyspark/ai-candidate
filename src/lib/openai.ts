@@ -165,7 +165,7 @@ export class OpenAIService {
       maxTokens?: number
       topP?: number
     }
-  ): Promise<{ content: string; usage?: any }> {
+  ): Promise<{ content: string; usage?: { prompt_tokens: number; completion_tokens: number; total_tokens: number } }> {
     try {
       const response = await this.client.chat.completions.create({
         model: options?.model || 'gpt-4o-mini',

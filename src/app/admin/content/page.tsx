@@ -175,7 +175,7 @@ export default function ContentManagement() {
   }
 
   // Handle unauthorized access
-  if (!session?.user || !(session.user as any).isAdmin) {
+  if (!session?.user || !(session.user as { isAdmin?: boolean }).isAdmin) {
     router.push('/auth/signin')
     return null
   }

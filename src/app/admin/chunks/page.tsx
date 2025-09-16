@@ -12,7 +12,8 @@ interface KnowledgeChunk {
     sourceId?: string
     chunkIndex?: number
     totalChunks?: number
-    [key: string]: any
+    tags?: string[]
+    [key: string]: unknown
   }
   created_at: string
   updated_at: string
@@ -133,7 +134,7 @@ export default function KnowledgeChunksPage() {
 
   useEffect(() => {
     loadChunks()
-  }, [])
+  }, [loadChunks])
 
   // Handle loading state
   if (status === 'loading') {
@@ -145,7 +146,7 @@ export default function KnowledgeChunksPage() {
   }
 
   // Handle unauthorized access
-  if (!session?.user || !(session.user as any).isAdmin) {
+  if (!session?.user || !(session.user as { isAdmin?: boolean }).isAdmin) {
     router.push('/auth/signin')
     return null
   }

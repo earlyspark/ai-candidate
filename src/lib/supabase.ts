@@ -39,7 +39,7 @@ export interface KnowledgeChunk {
   content: string
   embedding: number[] | null
   category: string
-  metadata: Record<string, any>
+  metadata: Record<string, unknown>
   created_at: string
   updated_at: string
 }
@@ -57,8 +57,8 @@ export interface Conversation {
   id: number
   session_id: string
   ip_address: string | null
-  messages: any[]
-  metadata: Record<string, any>
+  messages: { role: string; content: string; timestamp: string }[]
+  metadata: Record<string, unknown>
   created_at: string
   updated_at: string
 }

@@ -115,7 +115,7 @@ export class SearchService {
     // Calculate weights for each category
     Object.entries(categoryPatterns).forEach(([category, config]) => {
       let score = 0
-      let reasons: string[] = []
+      const reasons: string[] = []
 
       // Check keyword matches
       const keywordMatches = config.keywords.filter(keyword => 

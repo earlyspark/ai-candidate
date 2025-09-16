@@ -284,7 +284,7 @@ export default function ChatInterface({ sessionId, onContextUpdate }: ChatInterf
             <h3 className="text-lg font-medium text-gray-300 mb-2">Start a conversation</h3>
             <p className="text-gray-500 max-w-md mx-auto">
               Ask me anything about my professional background, experience, skills, or career preferences. 
-              I'll try my best to answer!
+              I&apos;ll try my best to answer!
             </p>
           </div>
         )}

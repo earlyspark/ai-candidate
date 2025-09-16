@@ -62,7 +62,7 @@ export class ResumeChunker extends BaseChunker {
       /^(.+)[-=]{3,}$/gm   // Underlined headers
     ]
     
-    let remainingContent = content
+    const remainingContent = content
     
     for (const pattern of headerPatterns) {
       const matches = Array.from(content.matchAll(pattern))

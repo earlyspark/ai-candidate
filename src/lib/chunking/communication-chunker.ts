@@ -100,7 +100,7 @@ export class CommunicationChunker extends BaseChunker {
     }
     
     // Process each conversation
-    detectedConversations.forEach((convContent, index) => {
+    detectedConversations.forEach((convContent, _index) => {
       const participants = this.extractParticipants(convContent)
       const context = this.inferContext(convContent)
       const messageCount = this.countMessages(convContent)
@@ -238,7 +238,7 @@ export class CommunicationChunker extends BaseChunker {
     return 'casual-conversation'
   }
   
-  private createInformationChunk(conversation: any, tags: string[], sourceId: number | undefined, chunkIndex: number): Chunk {
+  private createInformationChunk(conversation: { content: string; type?: string; participants?: string[]; context?: string }, tags: string[], sourceId: number | undefined, chunkIndex: number): Chunk {
     return {
       content: conversation.content,
       metadata: {
@@ -252,7 +252,7 @@ export class CommunicationChunker extends BaseChunker {
     }
   }
   
-  private createStyleChunk(conversation: any, tags: string[], sourceId: number | undefined, chunkIndex: number): Chunk {
+  private createStyleChunk(conversation: { content: string; type?: string; participants?: string[]; context?: string }, tags: string[], sourceId: number | undefined, chunkIndex: number): Chunk {
     const stylePatterns = this.analyzeStylePatterns(conversation.content)
     
     return {
@@ -296,7 +296,7 @@ export class CommunicationChunker extends BaseChunker {
     }
     
     // Analyze helpfulness patterns
-    const helpfulnessPatterns = [
+    const _helpfulnessPatterns = [
       'provides-examples',
       'asks-clarifying-questions',
       'offers-alternatives',
@@ -340,7 +340,7 @@ export class CommunicationChunker extends BaseChunker {
     return patterns
   }
   
-  private splitLargeConversation(conversation: any) {
+  private splitLargeConversation(conversation: { content: string; type?: string; participants?: string[]; context?: string }) {
     // Split by message boundaries while preserving context
     const messages = this.extractIndividualMessages(conversation.content)
     const subConversations = []
