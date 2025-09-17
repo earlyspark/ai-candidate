@@ -13,7 +13,7 @@ An AI-powered candidate agent that represents you professionally for initial scr
 
 ## Technology Stack
 
-- **Frontend/Backend**: Next.js 14 with TypeScript
+- **Frontend/Backend**: Next.js 15.5.3 with TypeScript 5
 - **Database**: Supabase with pgvector extension for vector search
 - **AI**: OpenAI GPT-4 + text-embedding-3-small for embeddings
 - **Authentication**: Google OAuth for admin access

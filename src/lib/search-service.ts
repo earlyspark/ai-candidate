@@ -58,7 +58,7 @@ export class SearchService {
       if (!results || results.length === 0) {
         const fallbackOptions = {
           ...options,
-          threshold: Math.min(options.threshold ?? 0.7, 0.5)
+          threshold: Math.min(options.threshold ?? 0.4, 0.3) // Lowered fallback threshold
         }
         results = await this.fallbackSearch(queryEmbedding, fallbackOptions)
       }

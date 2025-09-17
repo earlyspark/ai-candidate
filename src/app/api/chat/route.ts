@@ -27,9 +27,9 @@ export async function POST(request: NextRequest) {
     }
 
     // Get client IP for rate limiting (future enhancement)
-    const ipAddress = request.headers.get('x-forwarded-for') || 
-                     request.headers.get('x-real-ip') || 
-                     'unknown'
+    // const ipAddress = request.headers.get('x-forwarded-for') ||
+    //                  request.headers.get('x-real-ip') ||
+    //                  'unknown'
 
     // Get current conversation context
     const context = await conversationService.getContext(sessionId)
@@ -69,7 +69,7 @@ export async function POST(request: NextRequest) {
         response: cacheResult.response!.response,
         cached: true,
         similarity: cacheResult.similarity,
-        sources: (cacheResult.response?.searchResults || []).map((r: { chunk?: { id?: number; category?: string }; id?: number; category?: string }) => ({
+        sources: (cacheResult.response?.searchResults || []).map((r: any) => ({
           id: r.chunk?.id ?? r.id,
           category: r.chunk?.category ?? r.category,
           similarity: r.similarity ?? r.finalScore ?? null,
@@ -96,7 +96,7 @@ export async function POST(request: NextRequest) {
     console.log(`Performing RAG search for: "${message.substring(0, 50)}..."`)
     const searchResponse = await searchService.search(message, {
       limit: 8,
-      threshold: 0.7,
+      threshold: 0.4, // Lowered from 0.7 to 0.4 based on actual similarity scores
       includeMetadata: true
     })
 
@@ -206,7 +206,7 @@ ${conversationHistory}`
       { 
         success: false, 
         message: 'Sorry, I encountered an error processing your message. Please try again.',
-        error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        error: process.env.NODE_ENV === 'development' ? (error instanceof Error ? error.message : String(error)) : undefined
       },
       { status: 500 }
     )
