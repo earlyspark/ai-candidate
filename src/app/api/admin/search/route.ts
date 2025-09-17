@@ -36,11 +36,12 @@ export async function POST(request: NextRequest) {
 
   } catch (error) {
     console.error('Error in search API:', error)
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error'
     return NextResponse.json(
-      { 
+      {
         success: false,
         message: 'Search failed',
-        error: error.message 
+        error: errorMessage
       },
       { status: 500 }
     )
@@ -69,11 +70,12 @@ export async function GET(request: NextRequest) {
 
   } catch (error) {
     console.error('Error getting search stats:', error)
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error'
     return NextResponse.json(
-      { 
+      {
         success: false,
         message: 'Failed to get search statistics',
-        error: error.message 
+        error: errorMessage
       },
       { status: 500 }
     )

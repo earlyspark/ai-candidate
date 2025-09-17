@@ -73,7 +73,8 @@ export class SearchService {
       
     } catch (error) {
       console.error('Error in search:', error)
-      throw new Error(`Search failed: ${error.message}`)
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+      throw new Error(`Search failed: ${errorMessage}`)
     }
   }
 
@@ -195,7 +196,7 @@ export class SearchService {
 
       // Process and rank results
       const results: SearchResult[] = chunks
-        .map((chunk, index) => ({
+        .map((chunk: KnowledgeChunk & { similarity?: number; category_weight?: number; final_score?: number }, index: number) => ({
           chunk: {
             id: chunk.id,
             content: chunk.content,
@@ -205,9 +206,9 @@ export class SearchService {
             created_at: chunk.created_at,
             updated_at: chunk.updated_at
           },
-          similarity: chunk.similarity,
+          similarity: chunk.similarity || 0,
           categoryScore: chunk.category_weight || 0.3,
-          finalScore: chunk.final_score || chunk.similarity,
+          finalScore: chunk.final_score || chunk.similarity || 0,
           rank: index + 1
         }))
 
@@ -254,14 +255,37 @@ export class SearchService {
       // Calculate similarities manually
       const results: SearchResult[] = []
       
-      for (const chunk of chunks) {
+      const expectedDim = openaiService.getEmbeddingModelInfo().dimensions
+      for (const rawChunk of chunks) {
+        const chunk = rawChunk as KnowledgeChunk
         if (!chunk.embedding) continue
-        
-        const similarity = this.calculateCosineSimilarity(queryEmbedding, chunk.embedding)
+
+        // Normalize embedding from DB: it might be stored as JSON/text
+        let emb: number[] | null = null
+        try {
+          emb = Array.isArray(chunk.embedding)
+            ? (chunk.embedding as number[])
+            : (typeof chunk.embedding === 'string'
+                ? JSON.parse(chunk.embedding)
+                : null)
+        } catch {
+          emb = null
+        }
+        if (!emb || emb.length !== expectedDim) {
+          // Skip invalid/mismatched embeddings instead of throwing
+          continue
+        }
+
+        if (queryEmbedding.length !== expectedDim) {
+          // Defensive: skip if query embedding is unexpected size
+          continue
+        }
+
+        const similarity = this.calculateCosineSimilarity(queryEmbedding, emb)
         
         if (similarity >= threshold) {
           results.push({
-            chunk,
+            chunk: { ...chunk, embedding: emb },
             similarity,
             categoryScore: 0.5,
             finalScore: similarity,
@@ -330,7 +354,7 @@ export class SearchService {
       return {
         totalChunks: totalChunks || 0,
         embeddedChunks: embeddedChunks || 0,
-        searchablePercentage: totalChunks ? Math.round((embeddedChunks / totalChunks) * 100) : 0,
+        searchablePercentage: totalChunks ? Math.round(((embeddedChunks || 0) / totalChunks) * 100) : 0,
         categoryBreakdown
       }
 

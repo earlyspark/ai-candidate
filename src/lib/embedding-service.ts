@@ -42,8 +42,9 @@ export class EmbeddingService {
         }
       }
 
-      // Skip if already has embedding
-      if (chunk.embedding && chunk.embedding.length > 0) {
+      // Skip if already has valid embedding matching expected dimensions
+      const expectedDim = openaiService.getEmbeddingModelInfo().dimensions
+      if (Array.isArray(chunk.embedding) && chunk.embedding.length === expectedDim) {
         return {
           success: true,
           chunkId,
@@ -175,6 +176,53 @@ export class EmbeddingService {
 
     } catch (error) {
       console.error('Error in batch embedding generation:', error)
+      throw error
+    }
+  }
+
+  // Regenerate embeddings that exist but have the wrong dimension
+  async regenerateInvalidEmbeddings(): Promise<BatchEmbeddingResult> {
+    const startTime = Date.now()
+    try {
+      const expectedDim = openaiService.getEmbeddingModelInfo().dimensions
+      // Fetch a lightweight set including existing embeddings to validate length
+      const { data: chunks, error } = await supabase
+        .from('knowledge_chunks')
+        .select('id, content, category, metadata, embedding')
+        .not('embedding', 'is', null)
+
+      if (error) {
+        throw new Error(`Failed to fetch chunks: ${error.message}`)
+      }
+
+      const invalid = (chunks || []).filter((c: { id: string; embedding: number[] | null }) => !Array.isArray(c.embedding) || c.embedding.length !== expectedDim)
+
+      if (invalid.length === 0) {
+        return {
+          totalProcessed: 0,
+          successful: 0,
+          failed: 0,
+          results: [],
+          totalCost: 0,
+          processingTime: Date.now() - startTime
+        }
+      }
+
+      const results = await Promise.all(invalid.map(c => this.generateChunkEmbedding(c.id)))
+      const successful = results.filter(r => r.success).length
+      const failed = results.filter(r => !r.success).length
+      const totalCost = results.reduce((sum, r) => sum + r.cost, 0)
+
+      return {
+        totalProcessed: invalid.length,
+        successful,
+        failed,
+        results,
+        totalCost,
+        processingTime: Date.now() - startTime
+      }
+    } catch (error) {
+      console.error('Error regenerating invalid embeddings:', error)
       throw error
     }
   }
@@ -315,3 +363,4 @@ export class EmbeddingService {
 
 // Export singleton instance
 export const embeddingService = new EmbeddingService()
+

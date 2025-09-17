@@ -49,9 +49,14 @@ export async function POST(request: NextRequest) {
         result = await embeddingService.generateChunkEmbedding(chunkId)
         break
 
+      case 'repair-invalid':
+        // Regenerate embeddings that have wrong dimensions
+        result = await embeddingService.regenerateInvalidEmbeddings()
+        break
+
       default:
         return NextResponse.json(
-          { message: 'Invalid action. Use: generate-all, generate-category, or generate-single' },
+          { message: 'Invalid action. Use: generate-all, generate-category, generate-single, or repair-invalid' },
           { status: 400 }
         )
     }
@@ -64,11 +69,12 @@ export async function POST(request: NextRequest) {
 
   } catch (error) {
     console.error('Error in embeddings API:', error)
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error'
     return NextResponse.json(
-      { 
+      {
         success: false,
         message: 'Internal server error',
-        error: error.message 
+        error: errorMessage
       },
       { status: 500 }
     )
@@ -97,11 +103,12 @@ export async function GET(_request: NextRequest) {
 
   } catch (error) {
     console.error('Error getting embedding stats:', error)
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error'
     return NextResponse.json(
-      { 
+      {
         success: false,
         message: 'Internal server error',
-        error: error.message 
+        error: errorMessage
       },
       { status: 500 }
     )

@@ -5,7 +5,8 @@ import { usePathname } from 'next/navigation'
 
 declare global {
   interface Window {
-    gtag: (command: string, ...args: any[]) => void
+    gtag: (command: string, ...args: unknown[]) => void
+    dataLayer: unknown[]
   }
 }
 
@@ -30,9 +31,9 @@ export default function GoogleAnalytics() {
     document.head.appendChild(script)
 
     // Initialize gtag
-    window.gtag = function(...args: any[]) {
-      (window as any).dataLayer = (window as any).dataLayer || []
-      ;(window as any).dataLayer.push(arguments)
+    window.gtag = function(...args: unknown[]) {
+      window.dataLayer = window.dataLayer || []
+      window.dataLayer.push(args)
     }
 
     // Configure Google Analytics

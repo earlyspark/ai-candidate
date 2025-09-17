@@ -59,7 +59,7 @@ export default function ChatPage() {
   }, [])
 
   // Handle context updates from chat interface
-  const handleContextUpdate = (status: { level: string; tokensUsed: number; warning?: string }) => {
+  const handleContextUpdate = (status: { level: string; message: string; tokenCount: number; messageCount: number }) => {
     // This could be used for additional UI updates based on context status
     console.log('Context status updated:', status)
   }
@@ -106,3 +106,4 @@ export default function ChatPage() {
     </div>
   )
 }
+
