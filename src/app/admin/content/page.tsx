@@ -1,7 +1,6 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import TagInput from '@/components/TagInput'
 import ContentAnalyzer from '@/components/ContentAnalyzer'
@@ -48,7 +47,6 @@ const categories = [
 ] as const
 
 export default function ContentManagement() {
-  const { data: session, status } = useSession()
   const router = useRouter()
   const [activeTab, setActiveTab] = useState<ContentCategory>('resume')
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -165,47 +163,27 @@ export default function ContentManagement() {
 
   const currentCategory = categories.find(cat => cat.value === activeTab)
 
-  // Handle loading state
-  if (status === 'loading') {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600"></div>
-      </div>
-    )
-  }
-
-  // Handle unauthorized access
-  if (!session?.user || !(session.user as { isAdmin?: boolean }).isAdmin) {
-    router.push('/auth/signin')
-    return null
-  }
-
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="bg-white shadow">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center py-6">
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900">
-                Content Management
-              </h1>
-              <p className="text-gray-600">
-                Add and manage your professional information for the AI candidate
-              </p>
-            </div>
-            <button
-              onClick={() => router.push('/admin')}
-              className="bg-gray-600 text-white px-4 py-2 rounded-md hover:bg-gray-700"
-            >
-              ← Back to Admin
-            </button>
+    <div>
+      {/* Page Header */}
+      <div className="mb-8">
+        <div className="flex justify-between items-center">
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900">
+              Content Management
+            </h1>
+            <p className="text-gray-600">
+              Add and manage your professional information for the AI candidate
+            </p>
           </div>
+          <button
+            onClick={() => router.push('/admin')}
+            className="bg-gray-600 text-white px-4 py-2 rounded-md hover:bg-gray-700"
+          >
+            ← Back to Admin
+          </button>
         </div>
-      </header>
-
-      <div className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
-        <div className="px-4 py-6 sm:px-0">
+      </div>
           
           {/* Category Tabs */}
           <div className="border-b border-gray-200 mb-8">
@@ -416,8 +394,6 @@ export default function ContentManagement() {
               </div>
             )}
           </div>
-        </div>
-      </div>
     </div>
   )
 }

@@ -11,6 +11,15 @@ const nextConfig: NextConfig = {
     // your project has type errors.
     ignoreBuildErrors: true,
   },
+  // Make HTML source code readable for debugging
+  compiler: {
+    removeConsole: false, // Keep console.logs for debugging
+  },
+  // Disable HTML compression and minification
+  compress: false,
+  poweredByHeader: false,
+  // Configure output to be more readable
+  output: 'standalone',
 };
 
 export default nextConfig;
