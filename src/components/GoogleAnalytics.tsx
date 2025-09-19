@@ -1,7 +1,4 @@
-'use client'
-
-import { useEffect } from 'react'
-import { usePathname } from 'next/navigation'
+import Script from 'next/script'
 
 declare global {
   interface Window {
@@ -11,60 +8,45 @@ declare global {
 }
 
 export default function GoogleAnalytics() {
-  const pathname = usePathname()
   const measurementId = process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID
 
-  // Only run analytics in production on earlyspark.com
-  const isProduction = process.env.NODE_ENV === 'production' &&
-                      typeof window !== 'undefined' &&
-                      window.location.hostname === 'earlyspark.com'
+  // Only run analytics in production
+  const isProduction = process.env.NODE_ENV === 'production'
 
-  useEffect(() => {
-    if (!isProduction || !measurementId) {
-      return
-    }
+  // Don't render anything if not in production or no measurement ID
+  if (!isProduction || !measurementId) {
+    return null
+  }
 
-    // Load Google Analytics script
-    const script = document.createElement('script')
-    script.src = `https://www.googletagmanager.com/gtag/js?id=${measurementId}`
-    script.async = true
-    document.head.appendChild(script)
+  return (
+    <>
+      {/* Load Google Analytics script - this gets injected into HTML head */}
+      <Script
+        src={`https://www.googletagmanager.com/gtag/js?id=${measurementId}`}
+        strategy="afterInteractive"
+        id="google-analytics"
+      />
 
-    // Initialize gtag
-    window.gtag = function(...args: unknown[]) {
-      window.dataLayer = window.dataLayer || []
-      window.dataLayer.push(args)
-    }
+      {/* Initialize gtag - this runs after the script loads */}
+      <Script
+        id="google-analytics-init"
+        strategy="afterInteractive"
+        dangerouslySetInnerHTML={{
+          __html: `
+            window.dataLayer = window.dataLayer || [];
+            function gtag(){dataLayer.push(arguments);}
+            gtag('js', new Date());
 
-    // Configure Google Analytics
-    window.gtag('js', new Date())
-    window.gtag('config', measurementId, {
-      page_title: document.title,
-      page_location: window.location.href,
-    })
-
-    // Cleanup function
-    return () => {
-      const existingScript = document.querySelector(`script[src*="${measurementId}"]`)
-      if (existingScript) {
-        existingScript.remove()
-      }
-    }
-  }, [isProduction, measurementId])
-
-  // Track page views on route changes
-  useEffect(() => {
-    if (!isProduction || !measurementId || typeof window.gtag !== 'function') {
-      return
-    }
-
-    window.gtag('config', measurementId, {
-      page_path: pathname,
-      page_title: document.title,
-      page_location: window.location.href,
-    })
-  }, [pathname, isProduction, measurementId])
-
-  // Component renders nothing
-  return null
+            // Only initialize if on earlyspark.com
+            if (typeof window !== 'undefined' && window.location.hostname === 'earlyspark.com') {
+              gtag('config', '${measurementId}', {
+                page_title: document.title,
+                page_location: window.location.href,
+              });
+            }
+          `,
+        }}
+      />
+    </>
+  )
 }

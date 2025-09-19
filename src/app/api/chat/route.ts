@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { openaiService } from '@/lib/openai'
-import { searchService } from '@/lib/search-service'
+import { searchService, type SearchResult } from '@/lib/search-service'
 import { conversationService } from '@/lib/conversation-service'
 import { responseCacheService } from '@/lib/response-cache'
+import type { KnowledgeChunk } from '@/lib/supabase'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -69,12 +70,12 @@ export async function POST(request: NextRequest) {
         response: cacheResult.response!.response,
         cached: true,
         similarity: cacheResult.similarity,
-        sources: (cacheResult.response?.searchResults || []).map((r: any) => ({
-          id: r.chunk?.id ?? r.id,
-          category: r.chunk?.category ?? r.category,
-          similarity: r.similarity ?? r.finalScore ?? null,
-          rank: r.rank ?? null,
-          snippet: (r.chunk?.content ?? r.content ?? '').slice(0, 240)
+        sources: (cacheResult.response?.searchResults || []).map((r: SearchResult | (KnowledgeChunk & { similarity?: number; finalScore?: number; rank?: number })) => ({
+          id: 'chunk' in r ? r.chunk.id : r.id,
+          category: 'chunk' in r ? r.chunk.category : r.category,
+          similarity: 'chunk' in r ? r.similarity : (r.similarity ?? r.finalScore ?? null),
+          rank: 'chunk' in r ? r.rank : (r.rank ?? null),
+          snippet: ('chunk' in r ? r.chunk.content : r.content ?? '').slice(0, 240)
         })),
         context: {
           status: conversationService.getContextStatus(updatedContext.tokenCount),
