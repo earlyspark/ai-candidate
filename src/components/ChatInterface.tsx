@@ -118,7 +118,7 @@ export default function ChatInterface({ sessionId, onContextUpdate }: ChatInterf
 
     } catch (error) {
       console.error('Error sending message:', error)
-      setError(error.message || 'Failed to send message')
+      setError(error instanceof Error ? error.message : 'Failed to send message')
     } finally {
       setIsLoading(false)
     }

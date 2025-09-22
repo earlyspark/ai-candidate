@@ -3,7 +3,7 @@ import { openaiService } from '@/lib/openai'
 import { searchService, type SearchResult } from '@/lib/search-service'
 import { conversationService } from '@/lib/conversation-service'
 import { responseCacheService } from '@/lib/response-cache'
-import type { KnowledgeChunk } from '@/lib/supabase'
+import { responseAuthenticityService } from '@/lib/response-authenticity-service'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -70,12 +70,12 @@ export async function POST(request: NextRequest) {
         response: cacheResult.response!.response,
         cached: true,
         similarity: cacheResult.similarity,
-        sources: (cacheResult.response?.searchResults || []).map((r: SearchResult | (KnowledgeChunk & { similarity?: number; finalScore?: number; rank?: number })) => ({
-          id: 'chunk' in r ? r.chunk.id : r.id,
-          category: 'chunk' in r ? r.chunk.category : r.category,
-          similarity: 'chunk' in r ? r.similarity : (r.similarity ?? r.finalScore ?? null),
-          rank: 'chunk' in r ? r.rank : (r.rank ?? null),
-          snippet: ('chunk' in r ? r.chunk.content : r.content ?? '').slice(0, 240)
+        sources: (cacheResult.response?.searchResults || []).map((r: SearchResult) => ({
+          id: r.chunk.id,
+          category: r.chunk.category,
+          similarity: r.similarity,
+          rank: r.rank,
+          snippet: r.chunk.content.slice(0, 240)
         })),
         context: {
           status: conversationService.getContextStatus(updatedContext.tokenCount),
@@ -112,16 +112,50 @@ export async function POST(request: NextRequest) {
       .map(msg => `${msg.role}: ${msg.content}`)
       .join('\n')
 
-    // Create AI prompt with RAG context
-    const systemPrompt = `You are an AI assistant representing a professional candidate in conversations with recruiters and hiring managers. You have access to detailed information about the candidate's background, experience, and preferences.
+    // Analyze search confidence for LLM context
+    const maxSimilarity = searchResponse.results.length > 0
+      ? Math.max(...searchResponse.results.map(r => r.similarity || 0))
+      : 0
 
-IMPORTANT GUIDELINES:
-- Be professional, authentic, and helpful
-- Answer based on the retrieved context below
-- If you don't have specific information, be honest about it
-- Maintain the candidate's communication style and personality
-- Focus on relevant experience and skills for the conversation
-- Keep responses concise but informative
+    const searchAnalysis = responseAuthenticityService.analyzeSearchConfidence({
+      searchResults: searchResponse.results,
+      query: message,
+      maxSimilarity
+    })
+
+    // Create AI prompt with rich authenticity context
+    const systemPrompt = `You are an AI assistant representing a professional candidate in conversations with recruiters and hiring managers.
+
+SEARCH ANALYSIS - Use this to calibrate your confidence and authenticity:
+- Confidence Level: ${searchAnalysis.confidenceLevel} (similarity: ${Math.round(searchAnalysis.confidenceScore * 100)}%)
+- Found ${searchAnalysis.resultCount} relevant results from categories: ${searchAnalysis.categories.join(', ')}
+- Has current/recent information: ${searchAnalysis.hasRecentExperience ? 'Yes' : 'No'}
+${searchAnalysis.experienceAge ? `- Experience age: ${searchAnalysis.experienceAge} years` : ''}
+${searchAnalysis.gaps.length > 0 ? `- Information gaps: ${searchAnalysis.gaps.join(', ')}` : ''}
+
+AUTHENTICITY GUIDELINES:
+- CRITICAL: Use first person when referring to yourself as the AI ("I am an AI assistant...")
+- Use third person when referring to the candidate ("she is a Senior TPM...", "her experience...")
+- Express confidence based on search analysis:
+  * HIGH confidence (40%+ similarity): State facts directly, NO LinkedIn redirect needed
+  * MODERATE confidence (30-40% similarity): Use "i believe" for uncertainty
+  * LOW confidence (20-30% similarity): Use "i think" and acknowledge gaps
+  * NO confidence (<20% similarity): Be honest about not having information
+
+LINKEDIN REDIRECT RULES:
+- ONLY suggest LinkedIn when you genuinely don't have the information
+- HIGH/MODERATE confidence answers should NOT include LinkedIn suggestions
+- Only use LinkedIn redirect for:
+  * Questions you can't answer at all
+  * Very specific details not in the knowledge base
+  * When the same person has asked multiple unknowable questions
+
+COMMUNICATION STYLE (INFP-T personality):
+- Casual but thoughtful tone
+- Never capitalize "i" in responses
+- Use "..." when processing complex thoughts
+- Be direct but diplomatic
+- Always explain reasoning and context
 
 RETRIEVED CONTEXT:
 ${retrievedContent}
@@ -149,7 +183,7 @@ ${conversationHistory}`
       throw new Error('Failed to generate AI response')
     }
 
-    // Add assistant response to conversation
+    // Use the LLM response directly (authenticity is handled via prompt)
     const assistantMessage = {
       role: 'assistant' as const,
       content: aiResponse.content

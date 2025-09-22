@@ -11,8 +11,14 @@ export class SkillsChunker extends BaseChunker {
   }
 
   async chunk(content: string, tags: string[], sourceId?: number): Promise<Chunk[]> {
+    // Use enhanced chunking with hierarchical support
+    return await this.createEnhancedChunks(content, tags, sourceId)
+  }
+
+  // Override to provide skills-specific base chunking logic
+  protected async createBaseLevelChunks(content: string, tags: string[], sourceId?: number): Promise<Chunk[]> {
     const chunks: Chunk[] = []
-    
+
     // Parse skills by categories and preferences
     const skillGroups = this.parseSkillGroups(content)
     

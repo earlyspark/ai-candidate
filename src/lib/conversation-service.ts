@@ -12,6 +12,10 @@ export interface Message {
     searchResults?: { id: number; category: string; similarity: number }[]
     processingTime?: number
     tokenCount?: number
+    summarized?: boolean
+    originalCount?: number
+    truncated?: boolean
+    removedCount?: number
   }
 }
 
@@ -317,7 +321,7 @@ export class ConversationService {
   // Summarize messages for compression
   private summarizeMessages(messages: Message[]): string {
     const topics = new Set<string>()
-    const userQuestions = []
+    const userQuestions: string[] = []
     
     messages.forEach(msg => {
       if (msg.role === 'user') {

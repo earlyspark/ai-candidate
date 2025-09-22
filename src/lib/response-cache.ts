@@ -119,7 +119,7 @@ export class ResponseCacheService {
       const chunksReferenced = searchResults.map(r => r.chunk.id)
       const tagsInvolved = searchResults.reduce((tags, result) => {
         const chunkTags = result.chunk.metadata?.tags || []
-        return [...tags, ...chunkTags]
+        return [...tags, ...(Array.isArray(chunkTags) ? chunkTags : [])]
       }, [] as string[])
 
       // Calculate TTL
@@ -160,7 +160,7 @@ export class ResponseCacheService {
   // Invalidate cache by category
   async invalidateByCategory(category: string): Promise<number> {
     try {
-      const { data: deletedEntries, error } = await supabase
+      const { data: deletedEntries, error } = await supabaseAdmin
         .from('response_cache')
         .delete()
         .contains('categories_used', [category])
@@ -182,7 +182,7 @@ export class ResponseCacheService {
   // Invalidate cache by chunks
   async invalidateByChunks(chunkIds: number[]): Promise<number> {
     try {
-      const { data: deletedEntries, error } = await supabase
+      const { data: deletedEntries, error } = await supabaseAdmin
         .from('response_cache')
         .delete()
         .overlaps('chunks_referenced', chunkIds)
@@ -204,7 +204,7 @@ export class ResponseCacheService {
   // Invalidate cache by tags
   async invalidateByTags(tags: string[]): Promise<number> {
     try {
-      const { data: deletedEntries, error } = await supabase
+      const { data: deletedEntries, error } = await supabaseAdmin
         .from('response_cache')
         .delete()
         .overlaps('tags_involved', tags)
@@ -276,7 +276,7 @@ export class ResponseCacheService {
       // Category breakdown
       const categoryBreakdown: Record<string, number> = {}
       cacheEntries.forEach(entry => {
-        (entry.categories_used || []).forEach(category => {
+        (entry.categories_used || []).forEach((category: string) => {
           categoryBreakdown[category] = (categoryBreakdown[category] || 0) + 1
         })
       })
@@ -357,10 +357,9 @@ export class ResponseCacheService {
   // Update hit count for cache entry
   private async updateHitCount(cacheId: string): Promise<void> {
     try {
-      const { error } = await supabaseAdmin
-        .from('response_cache')
-        .update({ hit_count: supabaseAdmin.raw('hit_count + 1') })
-        .eq('id', cacheId)
+      const { error } = await supabaseAdmin.rpc('increment_hit_count', {
+        cache_id: cacheId
+      })
 
       if (error) {
         console.error('Error updating hit count:', error)

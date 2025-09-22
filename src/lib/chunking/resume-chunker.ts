@@ -6,37 +6,63 @@ export class ResumeChunker extends BaseChunker {
   constructor() {
     super('resume', {
       maxChunkSize: 600, // Smaller chunks for resume sections
-      preserveStructure: true
+      preserveStructure: true,
+      // Enable hierarchical chunking for temporal queries
+      enableHierarchicalChunking: true,
+      createParentChunks: true,
+      parentChunkMultiplier: 2.5,
+      maxHierarchyLevels: 2,
+      semanticOverlapEnabled: true
     })
   }
 
   async chunk(content: string, tags: string[], sourceId?: number): Promise<Chunk[]> {
+    // Use enhanced chunking with hierarchical support
+    return await this.createEnhancedChunks(content, tags, sourceId)
+  }
+
+  // Implement base-level chunking for resume content
+  protected async createBaseLevelChunks(content: string, tags: string[], sourceId?: number): Promise<Chunk[]> {
     const chunks: Chunk[] = []
-    
+
     // Parse structured content by headers and sections
     const sections = this.parseResumeSections(content)
-    
-    for (const section of sections) {
+
+    for (let sectionIndex = 0; sectionIndex < sections.length; sectionIndex++) {
+      const section = sections[sectionIndex]
+      const previousSection = sectionIndex > 0 ? sections[sectionIndex - 1] : undefined
+      const nextSection = sectionIndex < sections.length - 1 ? sections[sectionIndex + 1] : undefined
+
       if (this.estimateTokenCount(section.content) <= this.options.maxChunkSize!) {
-        // Section fits in one chunk
+        // Section fits in one chunk - extract semantic boundaries
+        const semanticBoundaries = await this.extractSemanticBoundaries(
+          section.content,
+          previousSection?.content,
+          nextSection?.content
+        )
+
         chunks.push({
           content: section.content,
           metadata: {
             ...this.createBaseMetadata(chunks.length, 0, tags, sourceId),
             sectionType: section.type,
-            sectionTitle: section.title
+            sectionTitle: section.title,
+            semanticBoundaries,
+            overlapStrategy: 'semantic'
           }
         })
       } else {
         // Section needs to be split while preserving structure
-        const subChunks = this.splitLargeSection(section)
+        const subChunks = await this.splitLargeSectionWithBoundaries(section, previousSection, nextSection)
         subChunks.forEach(chunk => {
           chunks.push({
-            content: chunk,
+            content: chunk.content,
             metadata: {
               ...this.createBaseMetadata(chunks.length, 0, tags, sourceId),
               sectionType: section.type,
-              sectionTitle: section.title
+              sectionTitle: section.title,
+              semanticBoundaries: chunk.boundaries,
+              overlapStrategy: 'semantic'
             }
           })
         })
@@ -136,37 +162,76 @@ export class ResumeChunker extends BaseChunker {
     return 'general'
   }
   
-  private splitLargeSection(section: {type: string, title: string, content: string}): string[] {
-    // For large sections, split by job entries, bullet points, or paragraphs
+  // Enhanced splitting with semantic boundary preservation
+  private async splitLargeSectionWithBoundaries(
+    section: {type: string, title: string, content: string},
+    previousSection?: {type: string, title: string, content: string},
+    nextSection?: {type: string, title: string, content: string}
+  ): Promise<Array<{content: string, boundaries: any}>> {
     const lines = section.content.split('\n')
-    const subSections: string[] = []
+    const subSections: Array<{content: string, boundaries: any}> = []
     let currentSubSection = section.title + '\n'
-    
-    for (const line of lines) {
+    let currentSubSectionLines: string[] = [section.title]
+
+    for (let i = 1; i < lines.length; i++) { // Start from 1 to skip title
+      const line = lines[i]
       const trimmedLine = line.trim()
-      
+
       // Check if this is a new job entry or major bullet point
       if (this.isNewEntry(trimmedLine)) {
         if (currentSubSection.length > section.title.length + 1) {
-          subSections.push(currentSubSection.trim())
+          // Extract boundaries for current subsection
+          const boundaries = await this.extractSemanticBoundaries(
+            currentSubSection,
+            previousSection?.content,
+            nextSection?.content
+          )
+
+          subSections.push({
+            content: currentSubSection.trim(),
+            boundaries
+          })
         }
         currentSubSection = section.title + '\n' + line + '\n'
+        currentSubSectionLines = [section.title, line]
       } else {
         const potentialSubSection = currentSubSection + line + '\n'
-        
+
         if (this.estimateTokenCount(potentialSubSection) <= this.options.maxChunkSize!) {
           currentSubSection = potentialSubSection
+          currentSubSectionLines.push(line)
         } else {
-          subSections.push(currentSubSection.trim())
+          // Create chunk with current content and boundaries
+          const boundaries = await this.extractSemanticBoundaries(
+            currentSubSection,
+            previousSection?.content,
+            i < lines.length - 1 ? lines[i] : nextSection?.content
+          )
+
+          subSections.push({
+            content: currentSubSection.trim(),
+            boundaries
+          })
+
           currentSubSection = section.title + '\n' + line + '\n'
+          currentSubSectionLines = [section.title, line]
         }
       }
     }
-    
+
     if (currentSubSection.trim()) {
-      subSections.push(currentSubSection.trim())
+      const boundaries = await this.extractSemanticBoundaries(
+        currentSubSection,
+        subSections.length > 0 ? subSections[subSections.length - 1].content : previousSection?.content,
+        nextSection?.content
+      )
+
+      subSections.push({
+        content: currentSubSection.trim(),
+        boundaries
+      })
     }
-    
+
     return subSections
   }
   

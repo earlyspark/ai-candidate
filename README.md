@@ -5,17 +5,19 @@ An AI-powered candidate agent that represents you professionally for initial scr
 ## Features
 
 - **Intelligent Chat Interface**: Mobile-first chat experience with real-time responses
-- **RAG-Powered Responses**: Semantic search through your professional content for accurate answers
+- **Advanced RAG System**: Semantic search with multi-granularity chunking and cross-reference ranking
+- **Authentic Communication**: LLM-driven authenticity with confidence-based response calibration
 - **Content Management**: Admin interface for managing resume, experience stories, projects, and skills
 - **Smart Tagging System**: AI-powered content analysis with organic tag suggestions
 - **Response Caching**: High-performance caching system for fast response times
-- **Conversation Analytics**: Track interactions and popular questions from recruiters
+- **Temporal Query Intelligence**: Context-aware processing with recency detection
+- **Professional Representation**: Third-person candidate representation with appropriate confidence levels
 
 ## Technology Stack
 
 - **Frontend/Backend**: Next.js 15.5.3 with TypeScript 5
 - **Database**: Supabase with pgvector extension for vector search
-- **AI**: OpenAI GPT-4 + text-embedding-3-small for embeddings
+- **AI**: OpenAI GPT-4o-mini + text-embedding-3-small for embeddings
 - **Authentication**: Google OAuth for admin access
 - **Styling**: Tailwind CSS with mobile-first design
 - **Hosting**: Vercel
@@ -91,11 +93,13 @@ The system organizes content into 5 specialized categories optimized for differe
 - **Communication Style**: Real conversations showing tone and personality
 - **Skills & Preferences**: Technical abilities, career goals, compensation
 
-### RAG System
-- Content is processed into optimized chunks with category-specific logic
-- OpenAI embeddings enable semantic search across your professional content
-- Intelligent query classification determines relevant categories for search
-- Response caching provides sub-second response times
+### Advanced RAG System
+- Multi-granularity content chunking with semantic boundary detection
+- Cross-reference ranking with hierarchical relationship analysis
+- Temporal query intelligence with recency-based confidence scoring
+- LLM-driven response authenticity with confidence calibration
+- OpenAI embeddings enable semantic search across professional content
+- High-performance response caching for sub-second response times
 
 ## Development
 

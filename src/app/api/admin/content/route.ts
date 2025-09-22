@@ -6,6 +6,7 @@ import { chunkingService, ContentCategory } from '@/lib/chunking'
 import { taggingService } from '@/lib/tagging'
 import { embeddingService } from '@/lib/embedding-service'
 import { responseCacheService } from '@/lib/response-cache'
+import { HierarchicalChunkService } from '@/lib/hierarchical-chunk-service'
 
 export async function POST(request: NextRequest) {
   try {
@@ -113,43 +114,47 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    // Store chunks in database
-    const chunksToStore = chunkingResult.chunks.map(chunk => ({
-      content: chunk.content,
-      category: chunk.metadata.category,
-      metadata: chunk.metadata,
-      created_at: new Date().toISOString()
-    }))
-
+    // Store hierarchical chunks in database
     let embeddingResults = null
-    if (chunksToStore.length > 0) {
-      const { data: insertedChunks, error: chunksError } = await supabaseAdmin
-        .from('knowledge_chunks')
-        .insert(chunksToStore)
-        .select('id')
+    let hierarchicalStorageResult = null
 
-      if (chunksError) {
-        console.error('Error storing chunks:', chunksError)
+    if (chunkingResult.chunks.length > 0) {
+      // Use hierarchical chunk service for storage
+      hierarchicalStorageResult = await HierarchicalChunkService.storeHierarchicalChunks(
+        chunkingResult.chunks,
+        versionData.id
+      )
+
+      if (!hierarchicalStorageResult.success) {
+        console.error('Error storing hierarchical chunks:', hierarchicalStorageResult.error)
         return NextResponse.json(
-          { 
-            message: 'Failed to store chunks. Check RLS/permissions (knowledge_chunks)',
-            code: chunksError.code,
-            details: chunksError.details || null,
-            hint: chunksError.hint || null
+          {
+            message: 'Failed to store hierarchical chunks',
+            error: hierarchicalStorageResult.error
           },
           { status: 500 }
         )
-      } else if (insertedChunks && insertedChunks.length > 0) {
-        // Generate embeddings for new chunks in background
+      }
+
+      // Generate embeddings for new chunks after hierarchical storage
+      if (hierarchicalStorageResult.storedChunks > 0) {
         try {
-          const embeddingPromises = insertedChunks.map(chunk => 
-            embeddingService.generateChunkEmbedding(chunk.id)
-          )
-          embeddingResults = await Promise.all(embeddingPromises)
-          
-          console.log(`Generated embeddings for ${embeddingResults.filter(r => r.success).length}/${embeddingResults.length} chunks`)
+          // Get all stored chunks for this group to generate embeddings
+          const { data: storedChunks, error: fetchError } = await supabaseAdmin
+            .from('knowledge_chunks')
+            .select('id')
+            .eq('chunk_group_id', hierarchicalStorageResult.groupId)
+
+          if (!fetchError && storedChunks) {
+            const embeddingPromises = storedChunks.map(chunk =>
+              embeddingService.generateChunkEmbedding(chunk.id)
+            )
+            embeddingResults = await Promise.all(embeddingPromises)
+
+            console.log(`Generated embeddings for ${embeddingResults.filter(r => r.success).length}/${embeddingResults.length} hierarchical chunks`)
+          }
         } catch (embeddingError) {
-          console.error('Error generating embeddings for new chunks:', embeddingError)
+          console.error('Error generating embeddings for hierarchical chunks:', embeddingError)
           // Don't fail the request - chunks are stored, embeddings can be generated later
         }
       }
@@ -176,7 +181,7 @@ export async function POST(request: NextRequest) {
     }
 
     return NextResponse.json({
-      message: 'Content processed successfully',
+      message: 'Content processed successfully with hierarchical chunking',
       versionId: versionData.id,
       processing: {
         totalChunks: chunkingResult.totalChunks,
@@ -184,6 +189,11 @@ export async function POST(request: NextRequest) {
         hasDualPurpose: chunkingResult.hasDualPurpose,
         categoryStats: chunkingResult.categoryStats
       },
+      hierarchicalStorage: hierarchicalStorageResult ? {
+        storedChunks: hierarchicalStorageResult.storedChunks,
+        groupId: hierarchicalStorageResult.groupId,
+        hierarchicalEnabled: true
+      } : null,
       embeddings: embeddingResults ? {
         generated: embeddingResults.filter(r => r.success).length,
         failed: embeddingResults.filter(r => !r.success).length,

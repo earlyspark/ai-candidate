@@ -12,11 +12,17 @@ export class CommunicationChunker extends BaseChunker {
   }
 
   async chunk(content: string, tags: string[], sourceId?: number): Promise<Chunk[]> {
+    // Use enhanced chunking with hierarchical support
+    return await this.createEnhancedChunks(content, tags, sourceId)
+  }
+
+  // Override to provide communication-specific base chunking logic
+  protected async createBaseLevelChunks(content: string, tags: string[], sourceId?: number): Promise<Chunk[]> {
     const chunks: Chunk[] = []
-    
+
     // Check if this content should also be processed for style analysis
     const isStyleSource = tags.includes('communication-style-source')
-    
+
     // Parse conversations or communication examples
     const conversations = this.parseConversations(content)
     
@@ -238,7 +244,7 @@ export class CommunicationChunker extends BaseChunker {
     return 'casual-conversation'
   }
   
-  private createInformationChunk(conversation: { content: string; type?: string; participants?: string[]; context?: string }, tags: string[], sourceId: number | undefined, chunkIndex: number): Chunk {
+  private createInformationChunk(conversation: { content: string; type?: string; participants?: string[]; context?: string; messageCount?: number }, tags: string[], sourceId: number | undefined, chunkIndex: number): Chunk {
     return {
       content: conversation.content,
       metadata: {
@@ -252,7 +258,7 @@ export class CommunicationChunker extends BaseChunker {
     }
   }
   
-  private createStyleChunk(conversation: { content: string; type?: string; participants?: string[]; context?: string }, tags: string[], sourceId: number | undefined, chunkIndex: number): Chunk {
+  private createStyleChunk(conversation: { content: string; type?: string; participants?: string[]; context?: string; messageCount?: number }, tags: string[], sourceId: number | undefined, chunkIndex: number): Chunk {
     const stylePatterns = this.analyzeStylePatterns(conversation.content)
     
     return {
@@ -340,7 +346,7 @@ export class CommunicationChunker extends BaseChunker {
     return patterns
   }
   
-  private splitLargeConversation(conversation: { content: string; type?: string; participants?: string[]; context?: string }) {
+  private splitLargeConversation(conversation: { content: string; type?: string; participants?: string[]; context?: string; messageCount?: number }) {
     // Split by message boundaries while preserving context
     const messages = this.extractIndividualMessages(conversation.content)
     const subConversations = []

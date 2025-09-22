@@ -11,8 +11,14 @@ export class ProjectsChunker extends BaseChunker {
   }
 
   async chunk(content: string, tags: string[], sourceId?: number): Promise<Chunk[]> {
+    // Use enhanced chunking with hierarchical support
+    return await this.createEnhancedChunks(content, tags, sourceId)
+  }
+
+  // Override to provide projects-specific base chunking logic
+  protected async createBaseLevelChunks(content: string, tags: string[], sourceId?: number): Promise<Chunk[]> {
     const chunks: Chunk[] = []
-    
+
     // Parse projects by structure
     const projects = this.parseProjects(content)
     

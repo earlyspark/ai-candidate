@@ -37,7 +37,7 @@ export class OpenAIService {
       return response.data[0].embedding
     } catch (error) {
       console.error('Error generating embedding:', error)
-      throw new Error(`Failed to generate embedding: ${error.message}`)
+      throw new Error(`Failed to generate embedding: ${error instanceof Error ? error.message : String(error)}`)
     }
   }
 
@@ -77,7 +77,7 @@ export class OpenAIService {
       return embeddings
     } catch (error) {
       console.error('Error generating batch embeddings:', error)
-      throw new Error(`Failed to generate batch embeddings: ${error.message}`)
+      throw new Error(`Failed to generate batch embeddings: ${error instanceof Error ? error.message : String(error)}`)
     }
   }
 
@@ -89,7 +89,7 @@ export class OpenAIService {
 
   // Calculate embedding cost
   calculateEmbeddingCost(tokenCount: number, model: string = 'text-embedding-3-small'): number {
-    const costPerToken = {
+    const costPerToken: Record<string, number> = {
       'text-embedding-3-small': 0.00002 / 1000,  // $0.00002 per 1K tokens
       'text-embedding-3-large': 0.00013 / 1000,  // $0.00013 per 1K tokens
       'text-embedding-ada-002': 0.0001 / 1000    // $0.0001 per 1K tokens
@@ -100,7 +100,7 @@ export class OpenAIService {
 
   // Get embedding model info
   getEmbeddingModelInfo(model: string = 'text-embedding-3-small') {
-    const modelInfo = {
+    const modelInfo: Record<string, { dimensions: number; maxTokens: number; costPer1KTokens: number }> = {
       'text-embedding-3-small': {
         dimensions: 1536,
         maxTokens: 8192,
@@ -186,7 +186,7 @@ export class OpenAIService {
       }
     } catch (error) {
       console.error('Error generating chat completion:', error)
-      throw new Error(`Failed to generate chat completion: ${error.message}`)
+      throw new Error(`Failed to generate chat completion: ${error instanceof Error ? error.message : String(error)}`)
     }
   }
 }

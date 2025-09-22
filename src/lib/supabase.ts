@@ -42,6 +42,13 @@ export interface KnowledgeChunk {
   metadata: Record<string, unknown>
   created_at: string
   updated_at: string
+  // Hierarchical chunk fields (added in migration-004)
+  parent_chunk_id: number | null
+  chunk_level: number
+  chunk_group_id: string | null
+  sequence_order: number
+  semantic_boundaries: Record<string, unknown>
+  overlap_strategy: string
 }
 
 export interface KnowledgeVersion {

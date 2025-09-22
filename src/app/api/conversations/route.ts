@@ -60,7 +60,7 @@ export async function POST(request: NextRequest) {
       { 
         success: false, 
         message: 'Internal server error',
-        error: error.message 
+        error: error instanceof Error ? error.message : String(error) 
       },
       { status: 500 }
     )
@@ -104,7 +104,7 @@ export async function GET(request: NextRequest) {
       { 
         success: false, 
         message: 'Internal server error',
-        error: error.message 
+        error: error instanceof Error ? error.message : String(error) 
       },
       { status: 500 }
     )

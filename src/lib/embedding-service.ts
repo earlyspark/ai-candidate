@@ -105,7 +105,7 @@ export class EmbeddingService {
       return {
         success: false,
         chunkId,
-        error: error.message,
+        error: error instanceof Error ? error.message : String(error),
         tokenCount: 0,
         cost: 0
       }
@@ -317,7 +317,7 @@ export class EmbeddingService {
         totalChunks: totalChunks || 0,
         embeddedChunks: embeddedChunks || 0,
         missingEmbeddings: (totalChunks || 0) - (embeddedChunks || 0),
-        completionPercentage: totalChunks ? Math.round((embeddedChunks / totalChunks) * 100) : 0,
+        completionPercentage: totalChunks && embeddedChunks ? Math.round((embeddedChunks / totalChunks) * 100) : 0,
         categoryBreakdown
       }
 
@@ -349,7 +349,7 @@ export class EmbeddingService {
 
   // Get category-specific context for better embeddings
   private getCategoryContext(category: string): string {
-    const contexts = {
+    const contexts: Record<string, string> = {
       resume: 'Professional background and career information:',
       experience: 'Professional experience and behavioral examples:',
       projects: 'Technical projects and implementation details:',

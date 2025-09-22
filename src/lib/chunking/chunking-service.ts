@@ -24,7 +24,7 @@ export class ChunkingService {
   private chunkers: Map<ContentCategory, BaseChunker>
 
   constructor() {
-    this.chunkers = new Map([
+    this.chunkers = new Map<ContentCategory, BaseChunker>([
       ['resume', new ResumeChunker()],
       ['experience', new ExperienceChunker()],
       ['projects', new ProjectsChunker()],
@@ -68,7 +68,7 @@ export class ChunkingService {
       }
     } catch (error) {
       console.error(`Error processing ${category} content:`, error)
-      throw new Error(`Failed to process ${category} content: ${error.message}`)
+      throw new Error(`Failed to process ${category} content: ${error instanceof Error ? error.message : String(error)}`)
     }
   }
 
