@@ -23,6 +23,7 @@ export class TaggingClient {
         headers: {
           'Content-Type': 'application/json',
         },
+        credentials: 'include',
         body: JSON.stringify({ rawTags, category }),
       })
 
@@ -55,7 +56,9 @@ export class TaggingClient {
         limit: limit.toString()
       })
 
-      const response = await fetch(`/api/admin/tags/autocomplete?${params}`)
+      const response = await fetch(`/api/admin/tags/autocomplete?${params}`, {
+        credentials: 'include'
+      })
 
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`)
@@ -77,6 +80,7 @@ export class TaggingClient {
         headers: {
           'Content-Type': 'application/json',
         },
+        credentials: 'include',
         body: JSON.stringify({ content, category }),
       })
 

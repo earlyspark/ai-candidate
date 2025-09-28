@@ -234,7 +234,7 @@ export class ConversationService {
   // Get context status with warnings
   getContextStatus(tokenCount: number): ContextStatus {
     const { WARNING_THRESHOLD, SOFT_LIMIT, HARD_LIMIT, CRITICAL_LIMIT } = this.contextLimits
-    
+
     const percentage = Math.round((tokenCount / CRITICAL_LIMIT) * 100)
 
     if (tokenCount <= WARNING_THRESHOLD) {
@@ -248,7 +248,7 @@ export class ConversationService {
         level: 'yellow',
         tokenCount,
         percentage,
-        warning: 'This conversation is getting lengthy. Consider starting fresh for best performance.',
+        warning: 'Long conversation - consider starting fresh for best responses',
         suggestion: 'Continue with current conversation'
       }
     } else if (tokenCount <= HARD_LIMIT) {
@@ -256,7 +256,7 @@ export class ConversationService {
         level: 'orange',
         tokenCount,
         percentage,
-        warning: 'Context limit approaching. Older messages will be summarized to maintain quality.',
+        warning: 'Context getting full - older messages will be summarized automatically',
         actionRequired: false,
         suggestion: 'Context compression will be applied automatically'
       }
@@ -265,7 +265,7 @@ export class ConversationService {
         level: 'red',
         tokenCount,
         percentage,
-        warning: 'Starting fresh conversation recommended for optimal responses.',
+        warning: 'Please start a new conversation for optimal performance',
         actionRequired: true,
         suggestion: 'Click "Start Fresh" to begin a new conversation'
       }

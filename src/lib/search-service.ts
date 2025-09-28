@@ -4,6 +4,7 @@ import type { KnowledgeChunk } from './supabase'
 import { HierarchicalChunkService, HierarchicalChunk } from './hierarchical-chunk-service'
 import { CrossReferenceService, CrossReferenceContext, EnrichedSearchResult } from './cross-reference-service'
 import { MetadataExtractor } from './metadata-extraction'
+import SearchConfigService from './search-config'
 
 export interface SearchResult {
   chunk: KnowledgeChunk
@@ -165,88 +166,212 @@ export class SearchService {
     }
   }
 
-  // Classify query to determine category relevance weights
+  // Intelligent query classification using dynamic category discovery and LLM analysis
   private async classifyQuery(query: string): Promise<CategoryWeight[]> {
-    const lowercaseQuery = query.toLowerCase()
-    
-    // Keywords and patterns for each category
-    const categoryPatterns = {
-      resume: {
-        keywords: ['background', 'experience', 'work', 'career', 'resume', 'cv', 'history', 'education', 'degree'],
-        patterns: [/where.*work/i, /what.*background/i, /tell me about yourself/i, /career path/i],
-        weight: 1.0
-      },
-      experience: {
-        keywords: ['time when', 'example', 'challenge', 'problem', 'leadership', 'team', 'conflict', 'difficult'],
-        patterns: [/tell me about.*time/i, /example of/i, /how did you handle/i, /challenge.*faced/i],
-        weight: 1.0
-      },
-      projects: {
-        keywords: ['project', 'built', 'developed', 'created', 'technical', 'code', 'architecture', 'system'],
-        patterns: [/what.*built/i, /project.*worked/i, /technical.*experience/i, /how.*implement/i],
-        weight: 1.0
-      },
-      communication: {
-        keywords: ['communicate', 'style', 'team', 'collaborate', 'culture', 'fit', 'personality'],
-        patterns: [/communication style/i, /how.*work.*team/i, /culture.*fit/i, /personality/i],
-        weight: 1.0
-      },
-      skills: {
-        keywords: ['skills', 'technologies', 'proficient', 'expert', 'level', 'rate', 'good at'],
-        patterns: [/skill.*level/i, /how good.*at/i, /proficiency/i, /rate.*skills/i],
-        weight: 1.0
+    try {
+      // Step 1: Dynamically discover available categories and their content
+      const discoveredCategories = await this.discoverAvailableCategories()
+
+      if (discoveredCategories.length === 0) {
+        // Fallback: return equal weights for common categories
+        return this.getFallbackCategoryWeights()
       }
+
+      // Step 2: Use LLM to intelligently classify query relevance to discovered categories
+      const llmWeights = await this.getLLMCategoryClassification(query, discoveredCategories)
+
+      if (llmWeights && llmWeights.length > 0) {
+        return llmWeights
+      }
+
+      // Step 3: Fallback to semantic similarity if LLM fails
+      return await this.getSemanticCategoryWeights(query, discoveredCategories)
+
+    } catch (error) {
+      console.error('Error in intelligent query classification:', error)
+      // Ultimate fallback to ensure system keeps working
+      return this.getFallbackCategoryWeights()
     }
+  }
 
-    const weights: CategoryWeight[] = []
+  // Dynamically discover what categories actually exist in the knowledge base
+  private async discoverAvailableCategories(): Promise<Array<{category: string, description: string, sampleContent: string}>> {
+    try {
+      const { data: categoryStats, error } = await supabase
+        .from('knowledge_chunks')
+        .select('category, content')
+        .not('embedding', 'is', null)
+        .limit(100) // Sample to understand content types
 
-    // Calculate weights for each category
-    Object.entries(categoryPatterns).forEach(([category, config]) => {
-      let score = 0
-      const reasons: string[] = []
+      if (error) {
+        console.error('Error discovering categories:', error)
+        return []
+      }
 
-      // Check keyword matches
-      const keywordMatches = config.keywords.filter(keyword => 
-        lowercaseQuery.includes(keyword)
+      if (!categoryStats || categoryStats.length === 0) {
+        return []
+      }
+
+      // Group by category and create descriptions
+      const categoryGroups = categoryStats.reduce((acc, chunk) => {
+        if (!acc[chunk.category]) {
+          acc[chunk.category] = []
+        }
+        acc[chunk.category].push(chunk.content)
+        return acc
+      }, {} as Record<string, string[]>)
+
+      // Create intelligent descriptions for each category
+      const categories = await Promise.all(
+        Object.entries(categoryGroups).map(async ([category, contents]) => {
+          const sampleContent = contents.slice(0, 3).join('\n').substring(0, 500)
+          const description = await this.generateCategoryDescription(category, sampleContent)
+
+          return {
+            category,
+            description: description || `Content related to ${category}`,
+            sampleContent: sampleContent.substring(0, 200)
+          }
+        })
       )
-      if (keywordMatches.length > 0) {
-        score += keywordMatches.length * 0.3
-        reasons.push(`Keywords: ${keywordMatches.join(', ')}`)
-      }
 
-      // Check pattern matches
-      const patternMatches = config.patterns.filter(pattern => 
-        pattern.test(query)
-      )
-      if (patternMatches.length > 0) {
-        score += patternMatches.length * 0.5
-        reasons.push('Pattern match')
-      }
+      return categories
+    } catch (error) {
+      console.error('Error in category discovery:', error)
+      return []
+    }
+  }
 
-      // Determine final weight based on score
-      let finalWeight = 0.3 // Base weight for all categories
-      
-      if (score >= 1.0) {
-        finalWeight = 1.0 // Primary category
-      } else if (score >= 0.5) {
-        finalWeight = 0.7 // Secondary category
-      } else if (score > 0) {
-        finalWeight = 0.5 // Tertiary category
-      }
+  // Use LLM to generate intelligent category descriptions
+  private async generateCategoryDescription(category: string, sampleContent: string): Promise<string | null> {
+    try {
+      const prompt = `Based on this sample content from the "${category}" category, write a brief 1-2 sentence description of what this category contains:
 
-      weights.push({
-        category,
-        weight: finalWeight,
-        reason: reasons.length > 0 ? reasons.join(', ') : 'Base weight'
+Sample content:
+"${sampleContent.substring(0, 300)}..."
+
+Description:`
+
+      const response = await openaiService.generateChatCompletion([
+        { role: 'user', content: prompt }
+      ], {
+        model: 'gpt-4o-mini',
+        temperature: 0.3,
+        maxTokens: 100
       })
-    })
 
-    // If no strong matches, use equal weighting
-    if (!weights.some(w => w.weight === 1.0)) {
-      weights.forEach(w => w.weight = 0.6)
+      return response.content?.trim() || null
+    } catch (error) {
+      console.error('Error generating category description:', error)
+      return null
     }
+  }
 
-    return weights.sort((a, b) => b.weight - a.weight)
+  // Use LLM to intelligently classify query relevance to discovered categories
+  private async getLLMCategoryClassification(
+    query: string,
+    categories: Array<{category: string, description: string, sampleContent: string}>
+  ): Promise<CategoryWeight[] | null> {
+    try {
+      const categoryList = categories.map(c =>
+        `- ${c.category}: ${c.description}`
+      ).join('\n')
+
+      const prompt = `Given this user query and available content categories, determine relevance weights (0.0 to 1.0) for each category.
+
+Query: "${query}"
+
+Available categories:
+${categoryList}
+
+Analyze the query intent and assign relevance weights. Consider:
+- Direct topic matches (1.0 for perfect match)
+- Related/supporting information (0.5-0.8)
+- Tangentially related (0.2-0.4)
+- Unrelated (0.0-0.1)
+
+Respond in JSON format:
+{"weights": [{"category": "category_name", "weight": 0.8, "reason": "explanation"}]}`
+
+      const response = await openaiService.generateChatCompletion([
+        { role: 'user', content: prompt }
+      ], {
+        model: 'gpt-4o-mini',
+        temperature: 0.2,
+        maxTokens: 300
+      })
+
+      if (!response.content) return null
+
+      try {
+        const parsed = JSON.parse(response.content)
+        if (parsed.weights && Array.isArray(parsed.weights)) {
+          return parsed.weights.map((w: any) => ({
+            category: w.category,
+            weight: Math.max(0, Math.min(1, w.weight || 0)),
+            reason: w.reason || 'LLM classification'
+          })).filter((w: CategoryWeight) =>
+            categories.some(c => c.category === w.category)
+          )
+        }
+      } catch (parseError) {
+        console.error('Error parsing LLM classification response:', parseError)
+      }
+
+      return null
+    } catch (error) {
+      console.error('Error in LLM category classification:', error)
+      return null
+    }
+  }
+
+  // Semantic similarity-based category weighting as backup
+  private async getSemanticCategoryWeights(
+    query: string,
+    categories: Array<{category: string, description: string}>
+  ): Promise<CategoryWeight[]> {
+    try {
+      const queryEmbedding = await openaiService.generateEmbedding(query)
+
+      const weights = await Promise.all(
+        categories.map(async (cat) => {
+          try {
+            const categoryEmbedding = await openaiService.generateEmbedding(cat.description)
+            const similarity = this.calculateCosineSimilarity(queryEmbedding, categoryEmbedding)
+
+            return {
+              category: cat.category,
+              weight: Math.max(0.2, similarity), // Minimum base weight
+              reason: `Semantic similarity: ${Math.round(similarity * 100)}%`
+            }
+          } catch (error) {
+            console.error(`Error calculating similarity for ${cat.category}:`, error)
+            return {
+              category: cat.category,
+              weight: 0.3,
+              reason: 'Fallback weight'
+            }
+          }
+        })
+      )
+
+      return weights.sort((a, b) => b.weight - a.weight)
+    } catch (error) {
+      console.error('Error in semantic category weighting:', error)
+      return this.getFallbackCategoryWeights()
+    }
+  }
+
+  // Fallback weights when all intelligent methods fail
+  private getFallbackCategoryWeights(): CategoryWeight[] {
+    return [
+      { category: 'resume', weight: 0.5, reason: 'Fallback' },
+      { category: 'experience', weight: 0.5, reason: 'Fallback' },
+      { category: 'projects', weight: 0.5, reason: 'Fallback' },
+      { category: 'communication', weight: 0.5, reason: 'Fallback' },
+      { category: 'skills', weight: 0.5, reason: 'Fallback' },
+      { category: 'personal', weight: 0.5, reason: 'Fallback' }
+    ]
   }
 
   // Detect temporal queries that benefit from hierarchical search
@@ -362,7 +487,9 @@ export class SearchService {
           // Calculate cosine similarity
           const similarity = this.calculateCosineSimilarity(queryEmbedding, chunk.embedding);
 
-          if (similarity < (options.threshold || 0.6)) continue;
+          // Get dynamic threshold from centralized config
+          const threshold = options.threshold || await SearchConfigService.getMethodThreshold('hierarchical');
+          if (similarity < threshold) continue;
 
           // Apply category weighting
           const categoryWeight = categoryWeights.find(cw => cw.category === chunk.category)?.weight || 0.5;
@@ -553,7 +680,8 @@ export class SearchService {
     options: SearchOptions
   ): Promise<SearchResult[]> {
     const limit = options.limit || 10
-    const threshold = options.threshold || 0.7
+    // Get dynamic threshold from centralized config
+    const threshold = options.threshold || await SearchConfigService.getMethodThreshold('weighted')
     
     try {
       // Convert category weights to the format expected by the SQL function
@@ -612,7 +740,8 @@ export class SearchService {
     options: SearchOptions
   ): Promise<SearchResult[]> {
     const limit = options.limit || 10
-    const threshold = options.threshold || 0.7
+    // Get dynamic threshold from centralized config
+    const threshold = options.threshold || await SearchConfigService.getMethodThreshold('basic')
 
     try {
       let query = supabase

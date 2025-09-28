@@ -10,8 +10,9 @@ An AI-powered candidate agent that represents you professionally for initial scr
 - **Content Management**: Admin interface for managing resume, experience stories, projects, and skills
 - **Smart Tagging System**: AI-powered content analysis with organic tag suggestions
 - **Response Caching**: High-performance caching system for fast response times
+- **Rate Limiting**: Built-in protections that throttle chat traffic per client
 - **Temporal Query Intelligence**: Context-aware processing with recency detection
-- **Professional Representation**: Third-person candidate representation with appropriate confidence levels
+- **Professional Representation**: First-person candidate representation with authenticity safeguards
 
 ## Technology Stack
 
@@ -92,6 +93,21 @@ The system organizes content into 5 specialized categories optimized for differe
 - **Technical Projects**: Implementation details, architecture, challenges
 - **Communication Style**: Real conversations showing tone and personality
 - **Skills & Preferences**: Technical abilities, career goals, compensation
+
+### Special Tags and Cross-Category Processing
+The system supports special tags that control content processing behavior beyond basic categorization:
+
+**`communication-style-source` Tag**:
+- Enables dual-purpose content processing
+- Creates both **information chunks** (for factual retrieval) AND **style chunks** (for communication pattern learning)
+- Can be used in any category to help the AI learn your voice and communication style
+- Particularly useful for Slack conversations, email exchanges, or any content that demonstrates how you communicate
+
+**Example**: Adding `communication-style-source` to a technical project description allows the AI to:
+1. Learn factual details about the project (standard processing)
+2. Analyze and learn your communication patterns when discussing technical topics (style processing)
+
+This dual-purpose approach helps the AI provide more authentic responses that match both your knowledge and communication style.
 
 ### Advanced RAG System
 - Multi-granularity content chunking with semantic boundary detection

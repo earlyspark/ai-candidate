@@ -108,7 +108,7 @@ export default function ChatInterface({ sessionId, onContextUpdate }: ChatInterf
       if (data.context) {
         const newStatus: ContextStatus = {
           level: data.context.status.level,
-          message: data.context.status.message,
+          message: data.context.status.warning || '', // Use warning message for display
           tokenCount: data.context.tokenCount,
           messageCount: data.context.messageCount
         }
@@ -197,12 +197,12 @@ export default function ChatInterface({ sessionId, onContextUpdate }: ChatInterf
       <div className="flex-shrink-0 border-b border-gray-800 p-4">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-xl font-semibold text-white">Chat with @earlyspark</h1>
+            <h1 className="text-xl font-semibold text-white">Hi, I'm @earlyspark</h1>
             <p className="text-sm text-gray-400">
-              An AI experiment in professional representation.{' '}
-              <a 
-                href="https://www.linkedin.com/in/rayanastanek/" 
-                target="_blank" 
+              I'm an AI chatbot that answers questions on RayAna's professional background.{' '}
+              <a
+                href="https://www.linkedin.com/in/rayanastanek/"
+                target="_blank"
                 rel="noopener noreferrer"
                 className="text-purple-400 hover:text-purple-300 visited:text-purple-400 underline underline-offset-2"
               >
@@ -231,15 +231,15 @@ export default function ChatInterface({ sessionId, onContextUpdate }: ChatInterf
           </div>
         </div>
 
-        {/* Context Status */}
-        {contextStatus && (
+        {/* Context Status - Only show when there's a warning (not green) */}
+        {contextStatus && contextStatus.level !== 'green' && (
           <div className="mt-3 p-3 bg-gray-900/50 rounded-lg border border-gray-800">
             <div className="flex items-center justify-between">
               <span className={`text-sm font-medium ${getContextStatusColor(contextStatus.level)}`}>
-                Context: {contextStatus.message}
+                {contextStatus.message}
               </span>
               <span className="text-xs text-gray-500">
-                {contextStatus.messageCount} messages • {contextStatus.tokenCount} tokens
+                {contextStatus.messageCount} messages
               </span>
             </div>
           </div>
@@ -283,7 +283,7 @@ export default function ChatInterface({ sessionId, onContextUpdate }: ChatInterf
             </div>
             <h3 className="text-lg font-medium text-gray-300 mb-2">Start a conversation</h3>
             <p className="text-gray-500 max-w-md mx-auto">
-              Ask me anything about my professional background, experience, skills, or career preferences. 
+              Ask me anything about her experience, skills, or career preferences.
               I&apos;ll try my best to answer!
             </p>
           </div>
@@ -381,7 +381,7 @@ export default function ChatInterface({ sessionId, onContextUpdate }: ChatInterf
               value={inputValue}
               onChange={(e) => setInputValue(e.target.value)}
               onKeyPress={handleKeyPress}
-              placeholder="Ask me about my experience, skills, or background..."
+              placeholder="Ask me about her experience, skills, or background..."
               className="w-full bg-gray-900 border border-gray-700 rounded-xl px-4 py-3 pr-12 text-white placeholder-gray-500 resize-none focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all custom-scrollbar"
               rows={1}
               style={{

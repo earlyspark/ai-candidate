@@ -1,6 +1,7 @@
-// Resume chunker - Structure-aware chunking for professional background
+// Resume chunker - Structure-aware chunking for professional background with LLM intelligence
 
 import { BaseChunker, Chunk } from './base-chunker'
+import { openaiService } from '../openai'
 
 export class ResumeChunker extends BaseChunker {
   constructor() {
@@ -26,7 +27,7 @@ export class ResumeChunker extends BaseChunker {
     const chunks: Chunk[] = []
 
     // Parse structured content by headers and sections
-    const sections = this.parseResumeSections(content)
+    const sections = await this.parseResumeSections(content)
 
     for (let sectionIndex = 0; sectionIndex < sections.length; sectionIndex++) {
       const section = sections[sectionIndex]
@@ -78,7 +79,7 @@ export class ResumeChunker extends BaseChunker {
     return chunks
   }
 
-  private parseResumeSections(content: string) {
+  private async parseResumeSections(content: string) {
     const sections: Array<{type: string, title: string, content: string}> = []
     
     // Split by headers (markdown style or common patterns)
@@ -88,7 +89,7 @@ export class ResumeChunker extends BaseChunker {
       /^(.+)[-=]{3,}$/gm   // Underlined headers
     ]
     
-    const remainingContent = content
+    // Content is processed by header patterns below
     
     for (const pattern of headerPatterns) {
       const matches = Array.from(content.matchAll(pattern))
@@ -119,8 +120,9 @@ export class ResumeChunker extends BaseChunker {
           const sectionContent = content.slice(headerEnd, sectionEnd).trim()
           
           if (sectionContent) {
+            const sectionType = await this.determineSectionType(headerTitle, sectionContent.substring(0, 200))
             sections.push({
-              type: this.determineSectionType(headerTitle),
+              type: sectionType,
               title: headerTitle,
               content: `${headerTitle}\n${sectionContent}`
             })
@@ -144,22 +146,78 @@ export class ResumeChunker extends BaseChunker {
     return sections
   }
   
-  private determineSectionType(title: string): string {
-    const titleLower = title.toLowerCase()
-    
-    if (titleLower.includes('experience') || titleLower.includes('work') || titleLower.includes('employment')) {
-      return 'experience'
-    } else if (titleLower.includes('education') || titleLower.includes('school') || titleLower.includes('university')) {
-      return 'education'
-    } else if (titleLower.includes('skill') || titleLower.includes('technical') || titleLower.includes('technologies')) {
-      return 'skills'
-    } else if (titleLower.includes('project') || titleLower.includes('portfolio')) {
-      return 'projects'
-    } else if (titleLower.includes('summary') || titleLower.includes('objective') || titleLower.includes('about')) {
-      return 'summary'
+  private async determineSectionType(title: string, contentPreview?: string): Promise<string> {
+    try {
+      // Use LLM for intelligent section classification
+      const llmClassification = await this.getLLMSectionClassification(title, contentPreview)
+      if (llmClassification) {
+        return llmClassification
+      }
+    } catch (error) {
+      console.error('LLM section classification failed, falling back to keyword matching:', error)
     }
-    
+
+    // Fallback: simplified keyword matching (removed overfitting)
+    const titleLower = title.toLowerCase()
+
+    if (titleLower.includes('experience') || titleLower.includes('work') || titleLower.includes('employment') || titleLower.includes('career')) {
+      return 'experience'
+    } else if (titleLower.includes('education') || titleLower.includes('school') || titleLower.includes('university') || titleLower.includes('degree')) {
+      return 'education'
+    } else if (titleLower.includes('skill') || titleLower.includes('technical') || titleLower.includes('technologies') || titleLower.includes('proficienc')) {
+      return 'skills'
+    } else if (titleLower.includes('project') || titleLower.includes('portfolio') || titleLower.includes('built')) {
+      return 'projects'
+    } else if (titleLower.includes('summary') || titleLower.includes('objective') || titleLower.includes('about') || titleLower.includes('profile')) {
+      return 'summary'
+    } else if (titleLower.includes('interest') || titleLower.includes('hobbies') || titleLower.includes('personal') || titleLower.includes('outside') || titleLower.includes('activities') || titleLower.includes('passion')) {
+      return 'personal'
+    }
+
     return 'general'
+  }
+
+  // LLM-powered section classification for creative section names
+  private async getLLMSectionClassification(title: string, contentPreview?: string): Promise<string | null> {
+    try {
+      const context = contentPreview ? `\n\nContent preview: "${contentPreview.substring(0, 200)}..."` : ''
+
+      const prompt = `Classify this resume section title into one of these categories: experience, education, skills, projects, summary, personal, general.
+
+Section title: "${title}"${context}
+
+Return only the category name (one word). Consider the semantic meaning, not just keywords:
+- experience: work history, jobs, career, professional journey
+- education: degrees, schools, learning, academic background
+- skills: technical abilities, proficiencies, technologies, tools
+- projects: things built, portfolio items, side projects
+- summary: overview, objective, about me, profile
+- personal: hobbies, interests, activities outside work, personal passions
+- general: anything else
+
+Category:`
+
+      const response = await openaiService.generateChatCompletion([
+        { role: 'user', content: prompt }
+      ], {
+        model: 'gpt-4o-mini',
+        temperature: 0.1,
+        maxTokens: 10
+      })
+
+      const classification = response.content?.trim().toLowerCase()
+
+      // Validate response
+      const validCategories = ['experience', 'education', 'skills', 'projects', 'summary', 'personal', 'general']
+      if (classification && validCategories.includes(classification)) {
+        return classification
+      }
+
+      return null
+    } catch (error) {
+      console.error('Error in LLM section classification:', error)
+      return null
+    }
   }
   
   // Enhanced splitting with semantic boundary preservation
@@ -167,9 +225,9 @@ export class ResumeChunker extends BaseChunker {
     section: {type: string, title: string, content: string},
     previousSection?: {type: string, title: string, content: string},
     nextSection?: {type: string, title: string, content: string}
-  ): Promise<Array<{content: string, boundaries: any}>> {
+  ): Promise<Array<{content: string, boundaries: Record<string, unknown>}>> {
     const lines = section.content.split('\n')
-    const subSections: Array<{content: string, boundaries: any}> = []
+    const subSections: Array<{content: string, boundaries: Record<string, unknown>}> = []
     let currentSubSection = section.title + '\n'
     let currentSubSectionLines: string[] = [section.title]
 
@@ -178,7 +236,8 @@ export class ResumeChunker extends BaseChunker {
       const trimmedLine = line.trim()
 
       // Check if this is a new job entry or major bullet point
-      if (this.isNewEntry(trimmedLine)) {
+      const contextLines = currentSubSectionLines.slice(-3).join('\n') // Last 3 lines for context
+      if (await this.isNewEntry(trimmedLine, contextLines)) {
         if (currentSubSection.length > section.title.length + 1) {
           // Extract boundaries for current subsection
           const boundaries = await this.extractSemanticBoundaries(
@@ -235,15 +294,62 @@ export class ResumeChunker extends BaseChunker {
     return subSections
   }
   
-  private isNewEntry(line: string): boolean {
-    // Patterns that typically indicate a new job or major section
-    const newEntryPatterns = [
+  private async isNewEntry(line: string, context: string): Promise<boolean> {
+    try {
+      // Use LLM for intelligent job boundary detection
+      const llmResult = await this.getLLMJobBoundaryDetection(line, context)
+      if (llmResult !== null) {
+        return llmResult
+      }
+    } catch (error) {
+      console.error('LLM job boundary detection failed, falling back to simplified patterns:', error)
+    }
+
+    // Fallback: simplified pattern matching (removed overfitting)
+    const simplifiedPatterns = [
       /^[\d]{4}[-\s]/,           // Starts with year
-      /^[A-Z][^a-z]*\s*[-–—]\s*[A-Z]/, // "COMPANY - ROLE" pattern
+      /^[*_][^*_]+[*_]$/,        // Any italicized text (job titles)
       /^[•·*-]\s*[A-Z]/,         // Bullet point starting with capital
-      /^[A-Z][a-z]+.*\([0-9]{4}/ // "Company (2020" pattern
+      /.*\([0-9]{4}/             // Any line with year in parentheses
     ]
-    
-    return newEntryPatterns.some(pattern => pattern.test(line))
+
+    return simplifiedPatterns.some(pattern => pattern.test(line.trim()))
+  }
+
+  // LLM-powered job boundary detection for semantic understanding
+  private async getLLMJobBoundaryDetection(line: string, context: string): Promise<boolean | null> {
+    try {
+      const prompt = `Is this line the start of a new job role/position in a resume? Answer only "yes" or "no".
+
+Consider these factors:
+- Job titles, company names, or role descriptions
+- Date ranges indicating new employment
+- Clear transitions between different positions
+- NOT just bullet points describing responsibilities
+
+Current line: "${line}"
+
+Context (previous lines): "${context.substring(0, 300)}"
+
+Answer:`
+
+      const response = await openaiService.generateChatCompletion([
+        { role: 'user', content: prompt }
+      ], {
+        model: 'gpt-4o-mini',
+        temperature: 0.1,
+        maxTokens: 5
+      })
+
+      const answer = response.content?.trim().toLowerCase()
+
+      if (answer === 'yes') return true
+      if (answer === 'no') return false
+
+      return null // Invalid response, use fallback
+    } catch (error) {
+      console.error('Error in LLM job boundary detection:', error)
+      return null
+    }
   }
 }

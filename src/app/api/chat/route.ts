@@ -4,12 +4,25 @@ import { searchService, type SearchResult } from '@/lib/search-service'
 import { conversationService } from '@/lib/conversation-service'
 import { responseCacheService } from '@/lib/response-cache'
 import { responseAuthenticityService } from '@/lib/response-authenticity-service'
+import SearchConfigService from '@/lib/search-config'
+import { applyRateLimit, getClientIP, RATE_LIMIT_CONFIGS } from '@/lib/rate-limiter'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 export async function POST(request: NextRequest) {
   try {
+    // Apply rate limiting
+    const clientIP = getClientIP(request)
+    const rateLimitResult = applyRateLimit(clientIP, RATE_LIMIT_CONFIGS.CHAT_API)
+
+    if (!rateLimitResult.allowed) {
+      return NextResponse.json(rateLimitResult.error, {
+        status: 429,
+        headers: rateLimitResult.headers
+      })
+    }
+
     const { message, sessionId } = await request.json()
 
     // Validate input
@@ -82,6 +95,8 @@ export async function POST(request: NextRequest) {
           tokenCount: updatedContext.tokenCount,
           messageCount: updatedContext.messages.length
         }
+      }, {
+        headers: rateLimitResult.headers
       })
     }
 
@@ -95,9 +110,13 @@ export async function POST(request: NextRequest) {
     
     // Perform RAG search
     console.log(`Performing RAG search for: "${message.substring(0, 50)}..."`)
+
+    // Get threshold from centralized config (defaults to minimum threshold for comprehensive search)
+    const threshold = await SearchConfigService.getThresholds().then(t => t.minimum_threshold)
+
     const searchResponse = await searchService.search(message, {
       limit: 8,
-      threshold: 0.4, // Lowered from 0.7 to 0.4 based on actual similarity scores
+      threshold: threshold, // Use centralized threshold config
       includeMetadata: true
     })
 
@@ -133,14 +152,20 @@ SEARCH ANALYSIS - Use this to calibrate your confidence and authenticity:
 ${searchAnalysis.experienceAge ? `- Experience age: ${searchAnalysis.experienceAge} years` : ''}
 ${searchAnalysis.gaps.length > 0 ? `- Information gaps: ${searchAnalysis.gaps.join(', ')}` : ''}
 
+PERSONA GUIDELINES:
+You are representing this specific candidate based on their actual data. Respond naturally in first person as the candidate.
+
+CRITICAL - NO HALLUCINATION RULE:
+- ONLY use information from the RETRIEVED CONTEXT below
+- If the retrieved context doesn't contain relevant information, clearly state "I don't have that information" or "I'd need to think about that"
+- NEVER invent, assume, or make up personal details, experiences, hobbies, or facts
+- When you don't know something, be honest about it
+
 AUTHENTICITY GUIDELINES:
-- CRITICAL: Use first person when referring to yourself as the AI ("I am an AI assistant...")
-- Use third person when referring to the candidate ("she is a Senior TPM...", "her experience...")
-- Express confidence based on search analysis:
-  * HIGH confidence (40%+ similarity): State facts directly, NO LinkedIn redirect needed
-  * MODERATE confidence (30-40% similarity): Use "i believe" for uncertainty
-  * LOW confidence (20-30% similarity): Use "i think" and acknowledge gaps
-  * NO confidence (<20% similarity): Be honest about not having information
+- Use natural, conversational language based on confidence level
+- High confidence: Speak naturally and directly
+- Moderate confidence: Use appropriate uncertainty ("I believe", "I think")
+- Low/No confidence: Be honest about not having the information
 
 LINKEDIN REDIRECT RULES:
 - ONLY suggest LinkedIn when you genuinely don't have the information
@@ -231,6 +256,8 @@ ${conversationHistory}`
         tokenCount: finalContext.tokenCount,
         messageCount: finalContext.messages.length
       }
+    }, {
+      headers: rateLimitResult.headers
     })
 
   } catch (error) {

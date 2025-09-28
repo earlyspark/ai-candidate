@@ -173,7 +173,8 @@ export default function ContentManagement() {
               Content Management
             </h1>
             <p className="text-gray-600">
-              Add and manage your professional information for the AI candidate
+              Add and manage your professional information for the AI candidate.
+              Use the special `communication-style-source` tag to enable dual-purpose processing.
             </p>
           </div>
           <button
@@ -368,7 +369,7 @@ export default function ContentManagement() {
                                   setForm({
                                     category: item.category as ContentCategory,
                                     content: item.content,
-                                    tags: ''
+                                    tags: item.tags ? item.tags.join(', ') : ''
                                   })
                                   setShowExisting(false)
                                   // Scroll to top of form

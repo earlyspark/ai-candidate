@@ -49,3 +49,7 @@ next-env.d.ts
 
 # development documentation
 CLAUDE.md
+
+# testing scripts and output
+/scripts/
+/test-output/

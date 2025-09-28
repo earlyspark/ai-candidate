@@ -1,6 +1,8 @@
 // Tag analytics service for organic tagging system
 
 import { supabase } from '../supabase'
+import { openaiService } from '../openai'
+import { createHash } from 'crypto'
 
 export interface TagUsageStats {
   tagName: string
@@ -109,22 +111,37 @@ export class TagAnalyticsService {
     }
   }
 
-  // Analyze content and suggest relevant tags
+  // Analyze content and suggest relevant tags (LLM + existing tags hybrid approach)
   async suggestTagsFromContent(content: string, category: string): Promise<TagSuggestion[]> {
+    if (!content || content.trim().length < 10) return []
+
     const suggestions: TagSuggestion[] = []
+    const contentHash = this.generateContentHash(content)
 
     try {
-      // Get existing frequently used tags for pattern matching
+      // 1. Check cache first
+      const cachedSuggestions = await this.getCachedSuggestions(contentHash, category)
+      if (cachedSuggestions) {
+        return cachedSuggestions
+      }
+
+      // 2. Get LLM suggestions (primary approach)
+      const llmSuggestions = await this.getLLMTagSuggestions(content, category)
+      suggestions.push(...llmSuggestions)
+
+      // 3. Get existing tag matches for vocabulary consistency
       const frequentTags = await this.getFrequentTags(100)
       const categoryTags = await this.getCategoryTags(category, 30)
-
-      // Content analysis for tag suggestions
       const contentLower = content.toLowerCase()
 
-      // Check for exact or partial matches with existing tags
-      frequentTags.forEach(tag => {
+      // Match existing tags for consistency
+      const allExistingTags = [...new Set([...frequentTags, ...categoryTags])]
+      allExistingTags.forEach(tag => {
         const tagLower = tag.toLowerCase()
-        
+
+        // Don't duplicate LLM suggestions
+        if (suggestions.find(s => s.tag === tagLower)) return
+
         if (contentLower.includes(tagLower)) {
           suggestions.push({
             tag,
@@ -140,36 +157,52 @@ export class TagAnalyticsService {
         }
       })
 
-      // Category-specific suggestions
-      categoryTags.forEach(tag => {
-        if (!suggestions.find(s => s.tag === tag)) {
-          const tagLower = tag.toLowerCase()
-          if (contentLower.includes(tagLower) || this.isPartialMatch(contentLower, tagLower)) {
-            suggestions.push({
-              tag,
-              confidence: 0.8,
-              reason: 'category-common'
-            })
+      // 4. Fallback to starter suggestions if we still have very few
+      if (suggestions.length < 3) {
+        const starterSuggestions = this.getStarterSuggestions(category, contentLower)
+        starterSuggestions.forEach(suggestion => {
+          if (!suggestions.find(s => s.tag === suggestion.tag)) {
+            suggestions.push(suggestion)
           }
-        }
-      })
+        })
+      }
 
-      // Content-based analysis for new tag suggestions
-      const contentSuggestions = this.analyzeContentForTags(content, category)
-      contentSuggestions.forEach(suggestion => {
-        if (!suggestions.find(s => s.tag === suggestion.tag)) {
-          suggestions.push(suggestion)
-        }
-      })
-
-      // Sort by confidence and return top suggestions
-      return suggestions
+      // Sort by confidence and limit results
+      const finalSuggestions = suggestions
         .sort((a, b) => b.confidence - a.confidence)
         .slice(0, 10)
 
+      // 5. Cache the results for future use
+      if (finalSuggestions.length > 0) {
+        await this.storeCachedSuggestions(contentHash, category, content, finalSuggestions)
+      }
+
+      return finalSuggestions
+
     } catch (error) {
       console.error('Error suggesting tags from content:', error)
-      return []
+
+      // Fallback: try to get existing tags without LLM
+      try {
+        const frequentTags = await this.getFrequentTags(50)
+        const contentLower = content.toLowerCase()
+
+        const fallbackSuggestions = frequentTags
+          .filter(tag => contentLower.includes(tag.toLowerCase()))
+          .slice(0, 5)
+          .map(tag => ({
+            tag,
+            confidence: 0.5,
+            reason: 'previously-used' as const
+          }))
+
+        return fallbackSuggestions.length > 0
+          ? fallbackSuggestions
+          : this.getStarterSuggestions(category, contentLower).slice(0, 3)
+      } catch {
+        // Final fallback
+        return this.getStarterSuggestions(category, content.toLowerCase()).slice(0, 3)
+      }
     }
   }
 
@@ -251,56 +284,6 @@ export class TagAnalyticsService {
     )
   }
 
-  private analyzeContentForTags(content: string, category: string): TagSuggestion[] {
-    const suggestions: TagSuggestion[] = []
-    const contentLower = content.toLowerCase()
-
-    // Category-specific content analysis patterns
-    const analysisPatterns: Record<string, Record<string, RegExp[]>> = {
-      resume: {
-        'senior-level': [/senior|lead|principal|staff/i],
-        'management': [/manage|supervise|direct|oversee/i],
-        'startup-experience': [/startup|early.stage/i],
-        'remote-work': [/remote|distributed|work.from.home/i]
-      },
-      experience: {
-        'team-leadership': [/led.team|managed.people|supervised/i],
-        'problem-solving': [/solved|resolved|fixed|debugged/i],
-        'cross-functional': [/cross.functional|collaborated.with|worked.across/i],
-        'mentoring': [/mentor|teach|guide|train/i]
-      },
-      projects: {
-        'full-stack': [/full.stack|frontend.and.backend/i],
-        'scalability': [/scale|scalable|performance|optimization/i],
-        'microservices': [/microservice|service.oriented|distributed/i],
-        'open-source': [/open.source|github|contribution/i]
-      },
-      communication: {
-        'helpful': [/help|assist|support|guide/i],
-        'technical-writing': [/document|explain|write|clarify/i],
-        'collaborative': [/collaborate|work.together|team.player/i]
-      },
-      skills: {
-        'expert-level': [/expert|advanced|proficient|mastery/i],
-        'learning': [/learning|studying|improving/i],
-        'certification': [/certified|certificate|credential/i]
-      }
-    }
-
-    const categoryPatterns = analysisPatterns[category] || {}
-    
-    for (const [tag, patterns] of Object.entries(categoryPatterns)) {
-      if (patterns.some(pattern => pattern.test(content))) {
-        suggestions.push({
-          tag,
-          confidence: 0.7,
-          reason: 'content-analysis'
-        })
-      }
-    }
-
-    return suggestions
-  }
 
   private areTagsSimilar(tag1: string, tag2: string): boolean {
     const t1 = tag1.toLowerCase()
@@ -343,6 +326,161 @@ export class TagAnalyticsService {
     if (t1 + 's' === t2 || t2 + 's' === t1) return 'plural-variation'
     if (t1.replace(/[-_]/g, '') === t2.replace(/[-_]/g, '')) return 'separator-variation'
     return 'abbreviation'
+  }
+
+  // Generate content hash for caching
+  private generateContentHash(content: string): string {
+    return createHash('sha256').update(content.trim()).digest('hex')
+  }
+
+  // Get cached tag suggestions
+  private async getCachedSuggestions(contentHash: string, category: string): Promise<TagSuggestion[] | null> {
+    try {
+      const { data, error } = await supabase
+        .from('tag_suggestions_cache')
+        .select('suggestions, hit_count')
+        .eq('content_hash', contentHash)
+        .eq('category', category)
+        .gt('expires_at', new Date().toISOString())
+        .single()
+
+      if (error || !data) return null
+
+      // Increment hit count
+      await supabase
+        .from('tag_suggestions_cache')
+        .update({ hit_count: data.hit_count + 1 })
+        .eq('content_hash', contentHash)
+        .eq('category', category)
+
+      return data.suggestions as TagSuggestion[]
+    } catch (error) {
+      console.error('Error getting cached suggestions:', error)
+      return null
+    }
+  }
+
+  // Store tag suggestions in cache
+  private async storeCachedSuggestions(
+    contentHash: string,
+    category: string,
+    content: string,
+    suggestions: TagSuggestion[]
+  ): Promise<void> {
+    try {
+      const contentPreview = content.substring(0, 200)
+      const expiresAt = new Date()
+      expiresAt.setDate(expiresAt.getDate() + 7) // 7-day TTL
+
+      await supabase
+        .from('tag_suggestions_cache')
+        .insert({
+          content_hash: contentHash,
+          category,
+          content_preview: contentPreview,
+          suggestions,
+          expires_at: expiresAt.toISOString()
+        })
+    } catch (error) {
+      console.error('Error storing cached suggestions:', error)
+      // Don't throw - caching is not critical
+    }
+  }
+
+  // Get LLM-powered tag suggestions
+  private async getLLMTagSuggestions(content: string, category: string): Promise<TagSuggestion[]> {
+    try {
+      const prompt = `Extract 5-8 relevant professional tags from this ${category} content. Focus on skills, technologies, roles, key concepts, and important themes. Return only a comma-separated list of tags.
+
+Content: "${content.substring(0, 1500)}"
+
+Tags:`
+
+      const response = await openaiService.generateChatCompletion([
+        { role: 'user', content: prompt }
+      ], {
+        model: 'gpt-4o-mini',
+        temperature: 0.3,
+        maxTokens: 100
+      })
+
+      if (!response.content) return []
+
+      // Parse comma-separated tags
+      const tags = response.content
+        .split(',')
+        .map(tag => tag.trim().toLowerCase())
+        .filter(tag => tag.length > 1 && tag.length < 50)
+        .slice(0, 8) // Ensure max 8 tags
+
+      return tags.map(tag => ({
+        tag,
+        confidence: 0.8,
+        reason: 'content-analysis' as const
+      }))
+
+    } catch (error) {
+      console.error('Error getting LLM tag suggestions:', error)
+      return []
+    }
+  }
+
+  // Provide starter suggestions when no existing tags are available
+  private getStarterSuggestions(category: string, contentLower: string): TagSuggestion[] {
+    const suggestions: TagSuggestion[] = []
+
+    // Category-specific starter tags
+    const starterTags: Record<string, string[]> = {
+      resume: [
+        'professional', 'experienced', 'skilled', 'education', 'certifications',
+        'remote-work', 'full-time', 'part-time', 'freelance', 'consulting'
+      ],
+      experience: [
+        'leadership', 'teamwork', 'problem-solving', 'communication', 'project-management',
+        'collaboration', 'mentoring', 'training', 'innovation', 'results-driven'
+      ],
+      projects: [
+        'web-development', 'mobile-app', 'full-stack', 'frontend', 'backend',
+        'database', 'api', 'user-interface', 'responsive', 'performance'
+      ],
+      communication: [
+        'friendly', 'helpful', 'clear', 'concise', 'professional',
+        'supportive', 'collaborative', 'responsive', 'patient', 'knowledgeable'
+      ],
+      skills: [
+        'programming', 'design', 'analysis', 'testing', 'debugging',
+        'documentation', 'optimization', 'security', 'maintenance', 'deployment'
+      ]
+    }
+
+    // Universal starter tags that apply to any category
+    const universalTags = [
+      'creative', 'analytical', 'detail-oriented', 'self-motivated', 'adaptable',
+      'organized', 'efficient', 'reliable', 'enthusiastic', 'dedicated'
+    ]
+
+    // Get category-specific tags
+    const categoryStarters = starterTags[category] || []
+
+    // Add a few category starters
+    categoryStarters.slice(0, 3).forEach(tag => {
+      suggestions.push({
+        tag,
+        confidence: 0.5,
+        reason: 'category-common'
+      })
+    })
+
+    // Add a few universal tags
+    universalTags.slice(0, 2).forEach(tag => {
+      suggestions.push({
+        tag,
+        confidence: 0.4,
+        reason: 'content-analysis'
+      })
+    })
+
+    return suggestions
   }
 }
 
