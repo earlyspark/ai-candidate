@@ -109,6 +109,37 @@ The system supports special tags that control content processing behavior beyond
 
 This dual-purpose approach helps the AI provide more authentic responses that match both your knowledge and communication style.
 
+### Intelligent Content Processing
+
+The system uses **category-specific chunking** with AI-powered intelligence to optimize how different types of content are processed:
+
+#### Resume Processing - AI-Powered Section Detection
+- **Smart Section Recognition**: Uses AI to understand resume structure regardless of format (markdown headers, ALL CAPS, underlined)
+- **Intelligent Classification**: Automatically categorizes sections (Experience, Education, Skills, Projects, etc.) even with creative headers like "My Journey"
+- **Job Boundary Detection**: AI determines when content represents new positions vs. responsibilities within the same role
+
+#### Experience Stories - STAR Format Optimization
+- **Behavioral Story Preservation**: Keeps complete STAR format examples intact for behavioral interview preparation
+- **Larger Chunks**: Uses 1000-token chunks to maintain narrative coherence and context
+- **Skills Extraction**: Identifies transferable skills and competencies demonstrated in each story
+
+#### Technical Projects - Architecture Preservation
+- **Technical Context Maintenance**: Keeps related technologies and implementation details together
+- **Project Boundary Recognition**: Identifies complete project descriptions and architectural decisions
+- **Tech Stack Relationships**: Preserves connections between technical choices and project outcomes
+
+#### Communication Style - Dual Processing
+- **Conversation Analysis**: Parses dialogue patterns and communication examples
+- **Style Learning**: Extracts communication patterns, tone, and personality markers when tagged with `communication-style-source`
+- **Dual Output**: Creates both factual content chunks AND communication style analysis chunks
+
+#### Skills & Preferences - Relationship-Aware Grouping
+- **Smart Clustering**: Groups related technologies and abilities together
+- **Proficiency Mapping**: Maintains skill levels and experience context
+- **Domain Organization**: Categorizes by technical areas (frontend, backend, tools, etc.)
+
+This intelligent processing ensures that when recruiters ask questions, the AI can provide precise, contextually-aware responses that maintain the authentic structure and relationships of your professional content.
+
 ### Advanced RAG System
 - Multi-granularity content chunking with semantic boundary detection
 - Cross-reference ranking with hierarchical relationship analysis
