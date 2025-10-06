@@ -46,8 +46,8 @@ export default function ChatInterface({ sessionId, onContextUpdate }: ChatInterf
     && process.env.NODE_ENV !== 'production'
   const [debugMode, setDebugMode] = useState<boolean>(defaultDebug)
 
-  // Streaming mode: enabled by default for better user experience
-  const [streamingMode, setStreamingMode] = useState<boolean>(true)
+  // Streaming mode: enabled by default and not user-configurable
+  const streamingMode = true
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
 
@@ -332,14 +332,6 @@ export default function ChatInterface({ sessionId, onContextUpdate }: ChatInterf
                 Debug RAG
               </label>
             )}
-            <label className="flex items-center gap-2 text-xs text-gray-400">
-              <input
-                type="checkbox"
-                checked={streamingMode}
-                onChange={(e) => setStreamingMode(e.target.checked)}
-              />
-              Streaming
-            </label>
             <button
               onClick={handleClearConversation}
               className="flex items-center gap-2 px-3 py-2 text-sm bg-gray-800 hover:bg-gray-700 rounded-lg transition-colors"
@@ -500,7 +492,7 @@ export default function ChatInterface({ sessionId, onContextUpdate }: ChatInterf
               value={inputValue}
               onChange={(e) => setInputValue(e.target.value)}
               onKeyPress={handleKeyPress}
-              placeholder="Ask me about her experience, skills, or background..."
+              placeholder="Ask me about my experience, skills, or background..."
               className="w-full bg-gray-900 border border-gray-700 rounded-xl px-4 py-3 pr-12 text-white placeholder-gray-500 resize-none focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all custom-scrollbar"
               rows={1}
               style={{

@@ -304,7 +304,15 @@ Respond in JSON format:
       if (!response.content) return null
 
       try {
-        const parsed = JSON.parse(response.content)
+        // Clean the response content - remove markdown code blocks if present
+        let cleanContent = response.content.trim()
+        if (cleanContent.startsWith('```json')) {
+          cleanContent = cleanContent.replace(/^```json\s*/, '').replace(/\s*```$/, '')
+        } else if (cleanContent.startsWith('```')) {
+          cleanContent = cleanContent.replace(/^```\s*/, '').replace(/\s*```$/, '')
+        }
+
+        const parsed = JSON.parse(cleanContent)
         if (parsed.weights && Array.isArray(parsed.weights)) {
           return parsed.weights.map((w: any) => ({
             category: w.category,

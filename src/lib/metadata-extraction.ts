@@ -78,7 +78,14 @@ export class MetadataExtractor {
         maxTokens: 1200
       })
 
-      const jsonStr = response.content.trim()
+      // Clean the response content - remove markdown code blocks if present
+      let jsonStr = response.content.trim()
+      if (jsonStr.startsWith('```json')) {
+        jsonStr = jsonStr.replace(/^```json\s*/, '').replace(/\s*```$/, '')
+      } else if (jsonStr.startsWith('```')) {
+        jsonStr = jsonStr.replace(/^```\s*/, '').replace(/\s*```$/, '')
+      }
+
       const metadata = JSON.parse(jsonStr)
 
       return this.validateLLMResponse(metadata)

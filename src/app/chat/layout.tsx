@@ -3,6 +3,9 @@ import type { Metadata } from 'next'
 export const metadata: Metadata = {
   title: 'Chat with @earlyspark',
   description: 'An AI experiment in professional representation',
+  alternates: {
+    canonical: 'https://chat.earlyspark.com',
+  },
   openGraph: {
     title: 'Chat with @earlyspark',
     description: 'An AI experiment in professional representation',
