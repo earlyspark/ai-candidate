@@ -15,7 +15,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  metadataBase: new URL('https://earlyspark.com'),
+  metadataBase: new URL(process.env.NODE_ENV === 'production' ? 'https://chat.earlyspark.com' : 'http://localhost:3000'),
   title: ".+:*earlyspark*:+.",
   description: "this is where i live",
   openGraph: {

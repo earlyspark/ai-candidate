@@ -37,8 +37,8 @@ export default function GoogleAnalytics() {
             function gtag(){dataLayer.push(arguments);}
             gtag('js', new Date());
 
-            // Only initialize if on earlyspark.com
-            if (typeof window !== 'undefined' && window.location.hostname === 'earlyspark.com') {
+            // Only initialize if on chat.earlyspark.com
+            if (typeof window !== 'undefined' && window.location.hostname === 'chat.earlyspark.com') {
               gtag('config', '${measurementId}', {
                 page_title: document.title,
                 page_location: window.location.href,

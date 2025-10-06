@@ -13,7 +13,7 @@ Disallow: /auth
 # Disallow debug paths
 Disallow: /api/debug
 
-Sitemap: https://earlyspark.com/sitemap.xml`
+Sitemap: https://chat.earlyspark.com/sitemap.xml`
 
   return new NextResponse(robotsTxt, {
     headers: {
