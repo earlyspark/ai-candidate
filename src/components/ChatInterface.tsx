@@ -41,10 +41,13 @@ export default function ChatInterface({ sessionId, onContextUpdate }: ChatInterf
   const [error, setError] = useState<string | null>(null)
   // Debug RAG mode: default from env, optional UI toggle only in non-prod when explicitly enabled
   const defaultDebug = typeof process !== 'undefined' && process.env.NEXT_PUBLIC_DEBUG_RAG === '1'
-  const showDebugToggle = typeof process !== 'undefined' 
-    && process.env.NEXT_PUBLIC_DEBUG_RAG_TOGGLE === '1' 
+  const showDebugToggle = typeof process !== 'undefined'
+    && process.env.NEXT_PUBLIC_DEBUG_RAG_TOGGLE === '1'
     && process.env.NODE_ENV !== 'production'
   const [debugMode, setDebugMode] = useState<boolean>(defaultDebug)
+
+  // Streaming mode: enabled by default for better user experience
+  const [streamingMode, setStreamingMode] = useState<boolean>(true)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
 
@@ -57,7 +60,7 @@ export default function ChatInterface({ sessionId, onContextUpdate }: ChatInterf
     scrollToBottom()
   }, [messages])
 
-  // Handle sending messages
+  // Handle sending messages with streaming support
   const handleSendMessage = async () => {
     if (!inputValue.trim() || isLoading) return
 
@@ -73,6 +76,15 @@ export default function ChatInterface({ sessionId, onContextUpdate }: ChatInterf
     setIsLoading(true)
     setError(null)
 
+    if (streamingMode) {
+      await handleStreamingMessage(userMessage)
+    } else {
+      await handleNonStreamingMessage(userMessage)
+    }
+  }
+
+  // Handle non-streaming message (original logic)
+  const handleNonStreamingMessage = async (userMessage: Message) => {
     try {
       const response = await fetch('/api/chat', {
         method: 'POST',
@@ -81,7 +93,8 @@ export default function ChatInterface({ sessionId, onContextUpdate }: ChatInterf
         },
         body: JSON.stringify({
           message: userMessage.content,
-          sessionId
+          sessionId,
+          stream: false
         }),
       })
 
@@ -108,7 +121,7 @@ export default function ChatInterface({ sessionId, onContextUpdate }: ChatInterf
       if (data.context) {
         const newStatus: ContextStatus = {
           level: data.context.status.level,
-          message: data.context.status.warning || '', // Use warning message for display
+          message: data.context.status.warning || '',
           tokenCount: data.context.tokenCount,
           messageCount: data.context.messageCount
         }
@@ -119,6 +132,104 @@ export default function ChatInterface({ sessionId, onContextUpdate }: ChatInterf
     } catch (error) {
       console.error('Error sending message:', error)
       setError(error instanceof Error ? error.message : 'Failed to send message')
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  // Handle streaming message
+  const handleStreamingMessage = async (userMessage: Message) => {
+    try {
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          message: userMessage.content,
+          sessionId,
+          stream: true
+        }),
+      })
+
+      if (!response.ok) {
+        throw new Error('Failed to start streaming response')
+      }
+
+      // Create assistant message placeholder
+      const assistantId = (Date.now() + 1).toString()
+      const assistantMessage: Message = {
+        id: assistantId,
+        role: 'assistant',
+        content: '',
+        timestamp: new Date(),
+        sources: []
+      }
+
+      setMessages(prev => [...prev, assistantMessage])
+
+      // Handle streaming response
+      const reader = response.body?.getReader()
+      const decoder = new TextDecoder()
+
+      if (!reader) {
+        throw new Error('No readable stream available')
+      }
+
+      let buffer = ''
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n')
+        buffer = lines.pop() || ''
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const data = JSON.parse(line.slice(6))
+
+              if (data.type === 'metadata') {
+                // Update assistant message with sources
+                setMessages(prev => prev.map(msg =>
+                  msg.id === assistantId
+                    ? { ...msg, sources: data.sources }
+                    : msg
+                ))
+              } else if (data.type === 'token') {
+                // Append token to assistant message
+                setMessages(prev => prev.map(msg =>
+                  msg.id === assistantId
+                    ? { ...msg, content: msg.content + data.content }
+                    : msg
+                ))
+              } else if (data.type === 'complete') {
+                // Update context status
+                if (data.context) {
+                  const newStatus: ContextStatus = {
+                    level: data.context.status.level,
+                    message: data.context.status.warning || '',
+                    tokenCount: data.context.tokenCount,
+                    messageCount: data.context.messageCount
+                  }
+                  setContextStatus(newStatus)
+                  onContextUpdate?.(newStatus)
+                }
+              } else if (data.type === 'error') {
+                throw new Error(data.error)
+              }
+            } catch (parseError) {
+              console.error('Error parsing streaming data:', parseError)
+            }
+          }
+        }
+      }
+
+    } catch (error) {
+      console.error('Error in streaming message:', error)
+      setError(error instanceof Error ? error.message : 'Failed to stream message')
     } finally {
       setIsLoading(false)
     }
@@ -221,6 +332,14 @@ export default function ChatInterface({ sessionId, onContextUpdate }: ChatInterf
                 Debug RAG
               </label>
             )}
+            <label className="flex items-center gap-2 text-xs text-gray-400">
+              <input
+                type="checkbox"
+                checked={streamingMode}
+                onChange={(e) => setStreamingMode(e.target.checked)}
+              />
+              Streaming
+            </label>
             <button
               onClick={handleClearConversation}
               className="flex items-center gap-2 px-3 py-2 text-sm bg-gray-800 hover:bg-gray-700 rounded-lg transition-colors"

@@ -189,6 +189,48 @@ export class OpenAIService {
       throw new Error(`Failed to generate chat completion: ${error instanceof Error ? error.message : String(error)}`)
     }
   }
+
+  // Generate streaming chat completion
+  async generateStreamingChatCompletion(
+    messages: Array<{role: 'system' | 'user' | 'assistant', content: string}>,
+    options?: {
+      model?: string
+      temperature?: number
+      maxTokens?: number
+      topP?: number
+    }
+  ): Promise<AsyncIterable<string>> {
+    try {
+      const stream = await this.client.chat.completions.create({
+        model: options?.model || 'gpt-4o-mini',
+        messages,
+        temperature: options?.temperature ?? 0.7,
+        max_tokens: options?.maxTokens || 1000,
+        top_p: options?.topP ?? 1.0,
+        stream: true
+      })
+
+      return this.processStream(stream)
+    } catch (error) {
+      console.error('Error generating streaming chat completion:', error)
+      throw new Error(`Failed to generate streaming chat completion: ${error instanceof Error ? error.message : String(error)}`)
+    }
+  }
+
+  // Process the streaming response
+  private async* processStream(stream: AsyncIterable<OpenAI.Chat.Completions.ChatCompletionChunk>): AsyncIterable<string> {
+    try {
+      for await (const chunk of stream) {
+        const content = chunk.choices[0]?.delta?.content
+        if (content) {
+          yield content
+        }
+      }
+    } catch (error) {
+      console.error('Error processing stream:', error)
+      throw new Error(`Stream processing failed: ${error instanceof Error ? error.message : String(error)}`)
+    }
+  }
 }
 
 // Export singleton instance

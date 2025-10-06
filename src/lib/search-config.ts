@@ -12,8 +12,8 @@ export interface SearchThresholds {
   // Core search thresholds
   high_confidence: number      // 40%+ similarity = high confidence responses
   moderate_confidence: number  // 30-40% similarity = moderate confidence
-  low_confidence: number      // 20-30% similarity = low confidence, use with hedging
-  minimum_threshold: number   // Below 20% = insufficient similarity, don't use
+  low_confidence: number      // 23-30% similarity = low confidence, use with hedging
+  minimum_threshold: number   // Below 23% = insufficient similarity, don't use
 
   // Specialized search method thresholds
   hierarchical_search: number // For hierarchical chunk relationships
@@ -43,16 +43,16 @@ const DEFAULT_SEARCH_CONFIG: SearchConfig = {
     // Confidence bands for response quality
     high_confidence: 0.40,      // 40%+ = high confidence, direct responses
     moderate_confidence: 0.30,  // 30-40% = moderate confidence, use hedging
-    low_confidence: 0.20,       // 20-30% = low confidence, heavy hedging
-    minimum_threshold: 0.20,    // 20% = absolute minimum for relevance
+    low_confidence: 0.23,       // 23-30% = low confidence, heavy hedging
+    minimum_threshold: 0.23,    // 23% = absolute minimum for relevance
 
     // Method-specific thresholds (all use minimum_threshold as baseline)
-    hierarchical_search: 0.20,  // For parent/child chunk relationships
-    weighted_search: 0.20,      // For category-weighted search
-    basic_search: 0.20,         // For fallback search
+    hierarchical_search: 0.23,  // For parent/child chunk relationships
+    weighted_search: 0.23,      // For category-weighted search
+    basic_search: 0.23,         // For fallback search
 
     // Database and caching
-    vector_search_db: 0.20,     // Database-level filtering
+    vector_search_db: 0.23,     // Database-level filtering
     cache_similarity: 0.85,     // Cache hits (much higher threshold)
   },
   embedding_model: 'text-embedding-3-small',

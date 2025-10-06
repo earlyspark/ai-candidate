@@ -43,7 +43,7 @@ export class ResponseAuthenticityService {
     let confidenceLevel: 'high' | 'moderate' | 'low' | 'none' = 'none'
     if (confidenceScore > 0.4) confidenceLevel = 'high'      // 40%+ = found relevant content
     else if (confidenceScore > 0.3) confidenceLevel = 'moderate'  // 30-40% = partial relevance
-    else if (confidenceScore > 0.2) confidenceLevel = 'low'       // 20-30% = tangentially related
+    else if (confidenceScore > 0.23) confidenceLevel = 'low'      // 23-30% = tangentially related
 
     // Identify gaps
     const gaps = this.identifyGaps(query, searchResults, confidenceScore)
@@ -131,7 +131,7 @@ export class ResponseAuthenticityService {
 
     if (searchResults.length === 0) {
       gaps.push('no information found about this topic')
-    } else if (confidenceScore < 0.2) {
+    } else if (confidenceScore < 0.23) {
       gaps.push('limited information available')
     } else if (confidenceScore < 0.4) {
       gaps.push('some details may be missing')

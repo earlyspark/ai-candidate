@@ -23,7 +23,7 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    const { message, sessionId } = await request.json()
+    const { message, sessionId, stream = false } = await request.json()
 
     // Validate input
     if (!message || typeof message !== 'string' || message.trim().length === 0) {
@@ -45,8 +45,12 @@ export async function POST(request: NextRequest) {
     //                  request.headers.get('x-real-ip') ||
     //                  'unknown'
 
-    // Get current conversation context
-    const context = await conversationService.getContext(sessionId)
+    // Parallel execution: Get context and cache check simultaneously
+    const [context, thresholds] = await Promise.all([
+      conversationService.getContext(sessionId),
+      SearchConfigService.getThresholds()
+    ])
+
     if (!context) {
       return NextResponse.json(
         { success: false, message: 'Session not found. Please start a new conversation.' },
@@ -56,7 +60,7 @@ export async function POST(request: NextRequest) {
 
     // Create context hash for caching
     const contextHash = conversationService.createContextHash(context.messages)
-    
+
     // Check response cache first
     const cacheResult = await responseCacheService.checkCache(message, contextHash)
     
@@ -111,12 +115,9 @@ export async function POST(request: NextRequest) {
     // Perform RAG search
     console.log(`Performing RAG search for: "${message.substring(0, 50)}..."`)
 
-    // Get threshold from centralized config (defaults to minimum threshold for comprehensive search)
-    const threshold = await SearchConfigService.getThresholds().then(t => t.minimum_threshold)
-
     const searchResponse = await searchService.search(message, {
-      limit: 8,
-      threshold: threshold, // Use centralized threshold config
+      limit: 5,
+      threshold: thresholds.minimum_threshold, // Use pre-loaded threshold config
       includeMetadata: true
     })
 
@@ -184,10 +185,15 @@ LINKEDIN REDIRECT RULES:
 
 COMMUNICATION STYLE (INFP-T personality):
 - Casual but thoughtful tone
-- Never capitalize "i" in responses
+- CRITICAL: Always use lowercase "i" - never write "I", always write "i"
 - Use "..." when processing complex thoughts
 - Be direct but diplomatic
 - Provide clear, direct responses with relevant context when helpful
+
+STRICT FORMATTING RULES:
+- Always use lowercase "i" when referring to yourself
+- Example: "i think", "i worked", "i believe" (NOT "I think", "I worked", "I believe")
+- This is a personal communication style preference - follow it exactly
 
 IMPORTANT - INTERVIEW DYNAMICS:
 - You are being interviewed, not conducting an interview
@@ -201,77 +207,95 @@ ${retrievedContent}
 CONVERSATION HISTORY:
 ${conversationHistory}`
 
-    // Generate AI response
-    const aiResponse = await openaiService.generateChatCompletion([
-      {
-        role: 'system',
-        content: systemPrompt
-      },
-      {
-        role: 'user',
-        content: message
-      }
-    ], {
-      model: 'gpt-4o-mini',
-      temperature: 0.7,
-      maxTokens: 500
-    })
-
-    if (!aiResponse || !aiResponse.content) {
-      throw new Error('Failed to generate AI response')
-    }
-
-    // Use the LLM response directly (authenticity is handled via prompt)
-    const assistantMessage = {
-      role: 'assistant' as const,
-      content: aiResponse.content
-    }
-    
-    const finalContext = await conversationService.addMessage(sessionId, assistantMessage)
-
-    // Cache the response for future similar queries
-    try {
-      const queryEmbedding = await openaiService.generateEmbedding(message)
-      await responseCacheService.storeResponse(
+    // Handle streaming vs non-streaming responses
+    if (stream) {
+      // Streaming response
+      return handleStreamingResponse({
         message,
-        aiResponse.content,
-        searchResponse.results,
+        sessionId,
+        systemPrompt,
+        searchResponse,
+        contextWithUserMessage,
         contextHash,
-        queryEmbedding
-      )
-    } catch (cacheError) {
-      console.error('Failed to cache response:', cacheError)
-      // Don't fail the request for caching errors
-    }
+        rateLimitResult
+      })
+    } else {
+      // Non-streaming response (existing logic)
+      const aiResponse = await openaiService.generateChatCompletion([
+        {
+          role: 'system',
+          content: systemPrompt
+        },
+        {
+          role: 'user',
+          content: message
+        }
+      ], {
+        model: 'gpt-4o-mini',
+        temperature: 0.7,
+        maxTokens: 500
+      })
 
-    // Return successful response
-    return NextResponse.json({
-      success: true,
-      response: aiResponse.content,
-      cached: false,
-      model: 'gpt-4o-mini',
-      usage: aiResponse.usage || null,
-      search: {
-        resultsCount: searchResponse.results.length,
-        categories: searchResponse.categoryWeights,
-        processingTime: searchResponse.searchTime
-      },
-      sources: searchResponse.results.map(r => ({
-        id: r.chunk.id,
-        category: r.chunk.category,
-        similarity: r.similarity,
-        rank: r.rank,
-        snippet: r.chunk.content.slice(0, 240),
-        tags: r.chunk.metadata?.tags || []
-      })),
-      context: {
-        status: conversationService.getContextStatus(finalContext.tokenCount),
-        tokenCount: finalContext.tokenCount,
-        messageCount: finalContext.messages.length
+      if (!aiResponse || !aiResponse.content) {
+        throw new Error('Failed to generate AI response')
       }
-    }, {
-      headers: rateLimitResult.headers
-    })
+
+      // Use the LLM response directly (authenticity is handled via prompt)
+      const assistantMessage = {
+        role: 'assistant' as const,
+        content: aiResponse.content
+      }
+
+      // Parallel execution: Update context and prepare cache simultaneously
+      const [finalContext] = await Promise.all([
+        conversationService.addMessage(sessionId, assistantMessage),
+        // Cache the response in background - don't wait for it
+        (async () => {
+          try {
+            const queryEmbedding = await openaiService.generateEmbedding(message)
+            await responseCacheService.storeResponse(
+              message,
+              aiResponse.content,
+              searchResponse.results,
+              contextHash,
+              queryEmbedding
+            )
+          } catch (cacheError) {
+            console.error('Failed to cache response:', cacheError)
+            // Don't fail the request for caching errors
+          }
+        })()
+      ])
+
+      // Return successful response
+      return NextResponse.json({
+        success: true,
+        response: aiResponse.content,
+        cached: false,
+        model: 'gpt-4o-mini',
+        usage: aiResponse.usage || null,
+        search: {
+          resultsCount: searchResponse.results.length,
+          categories: searchResponse.categoryWeights,
+          processingTime: searchResponse.searchTime
+        },
+        sources: searchResponse.results.map(r => ({
+          id: r.chunk.id,
+          category: r.chunk.category,
+          similarity: r.similarity,
+          rank: r.rank,
+          snippet: r.chunk.content.slice(0, 240),
+          tags: r.chunk.metadata?.tags || []
+        })),
+        context: {
+          status: conversationService.getContextStatus(finalContext.tokenCount),
+          tokenCount: finalContext.tokenCount,
+          messageCount: finalContext.messages.length
+        }
+      }, {
+        headers: rateLimitResult.headers
+      })
+    }
 
   } catch (error) {
     console.error('Error in chat API:', error)
@@ -286,4 +310,136 @@ ${conversationHistory}`
       { status: 500 }
     )
   }
+}
+
+// Streaming response handler
+async function handleStreamingResponse({
+  message,
+  sessionId,
+  systemPrompt,
+  searchResponse,
+  contextWithUserMessage,
+  contextHash,
+  rateLimitResult
+}: {
+  message: string
+  sessionId: string
+  systemPrompt: string
+  searchResponse: any
+  contextWithUserMessage: any
+  contextHash: string
+  rateLimitResult: any
+}) {
+  const encoder = new TextEncoder()
+
+  const stream = new ReadableStream({
+    async start(controller) {
+      try {
+        // Send initial metadata
+        const metadata = JSON.stringify({
+          type: 'metadata',
+          search: {
+            resultsCount: searchResponse.results.length,
+            categories: searchResponse.categoryWeights,
+            processingTime: searchResponse.searchTime
+          },
+          sources: searchResponse.results.map((r: any) => ({
+            id: r.chunk.id,
+            category: r.chunk.category,
+            similarity: r.similarity,
+            rank: r.rank,
+            snippet: r.chunk.content.slice(0, 240),
+            tags: r.chunk.metadata?.tags || []
+          }))
+        })
+        controller.enqueue(encoder.encode(`data: ${metadata}\n\n`))
+
+        // Start streaming AI response
+        const streamIterable = await openaiService.generateStreamingChatCompletion([
+          {
+            role: 'system',
+            content: systemPrompt
+          },
+          {
+            role: 'user',
+            content: message
+          }
+        ], {
+          model: 'gpt-4o-mini',
+          temperature: 0.7,
+          maxTokens: 500
+        })
+
+        let fullResponse = ''
+
+        // Stream each token
+        for await (const token of streamIterable) {
+          fullResponse += token
+          const chunk = JSON.stringify({
+            type: 'token',
+            content: token
+          })
+          controller.enqueue(encoder.encode(`data: ${chunk}\n\n`))
+        }
+
+        // Process complete response in background
+        const assistantMessage = {
+          role: 'assistant' as const,
+          content: fullResponse
+        }
+
+        // Update context and cache in background
+        Promise.all([
+          conversationService.addMessage(sessionId, assistantMessage),
+          (async () => {
+            try {
+              const queryEmbedding = await openaiService.generateEmbedding(message)
+              await responseCacheService.storeResponse(
+                message,
+                fullResponse,
+                searchResponse.results,
+                contextHash,
+                queryEmbedding
+              )
+            } catch (cacheError) {
+              console.error('Failed to cache streaming response:', cacheError)
+            }
+          })()
+        ]).then(([finalContext]) => {
+          // Send final metadata
+          const finalData = JSON.stringify({
+            type: 'complete',
+            context: {
+              status: conversationService.getContextStatus(finalContext.tokenCount),
+              tokenCount: finalContext.tokenCount,
+              messageCount: finalContext.messages.length
+            }
+          })
+          controller.enqueue(encoder.encode(`data: ${finalData}\n\n`))
+          controller.close()
+        }).catch((error) => {
+          console.error('Error in background processing:', error)
+          controller.close()
+        })
+
+      } catch (error) {
+        console.error('Streaming error:', error)
+        const errorData = JSON.stringify({
+          type: 'error',
+          error: 'Failed to generate streaming response'
+        })
+        controller.enqueue(encoder.encode(`data: ${errorData}\n\n`))
+        controller.close()
+      }
+    }
+  })
+
+  return new Response(stream, {
+    headers: {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive',
+      ...rateLimitResult.headers
+    }
+  })
 }
