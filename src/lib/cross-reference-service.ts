@@ -489,10 +489,10 @@ export class CrossReferenceService {
 
     // Metadata term overlap
     const metadataTerms = [
-      ...(Array.isArray(chunkMetadata.entities) ? chunkMetadata.entities : []),
-      ...(Array.isArray(chunkMetadata.tools) ? chunkMetadata.tools : []),
-      ...(Array.isArray(chunkMetadata.keyTopics) ? chunkMetadata.keyTopics : []),
-      ...(Array.isArray(chunkMetadata.concepts) ? chunkMetadata.concepts : [])
+      ...(chunkMetadata && Array.isArray(chunkMetadata.entities) ? chunkMetadata.entities : []),
+      ...(chunkMetadata && Array.isArray(chunkMetadata.tools) ? chunkMetadata.tools : []),
+      ...(chunkMetadata && Array.isArray(chunkMetadata.keyTopics) ? chunkMetadata.keyTopics : []),
+      ...(chunkMetadata && Array.isArray(chunkMetadata.concepts) ? chunkMetadata.concepts : [])
     ].map(term => term.toLowerCase())
 
     const metadataOverlap = queryTerms.filter(term =>

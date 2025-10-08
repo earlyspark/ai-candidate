@@ -148,7 +148,8 @@ export class ResponseCacheService {
 
       if (error) {
         console.error('Error storing response in cache:', error)
-        throw new Error(`Failed to store response in cache: ${error.message}`)
+        // Don't throw - caching failure shouldn't break the main flow
+        return
       }
 
     } catch (error) {

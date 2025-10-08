@@ -462,8 +462,8 @@ export default function ChatInterface({ sessionId, onContextUpdate }: ChatInterf
           </div>
         ))}
 
-        {/* Typing indicator */}
-        {isLoading && (
+        {/* Typing indicator - only show if loading and no assistant message started streaming yet */}
+        {isLoading && messages[messages.length - 1]?.role !== 'assistant' && (
           <div className="flex justify-start">
             <div className="bg-gray-800 border border-gray-700 rounded-2xl px-4 py-3 max-w-[60%]">
               <div className="flex items-center space-x-2">

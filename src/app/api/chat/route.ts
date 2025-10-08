@@ -10,6 +10,135 @@ import { applyRateLimit, getClientIP, RATE_LIMIT_CONFIGS } from '@/lib/rate-limi
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
+// Helper: Check if query is relevant to candidate's professional background
+async function checkQueryRelevance(query: string): Promise<boolean> {
+  const relevancePrompt = `Classify if a question relates to employment/career topics.
+
+QUESTION: "${query}"
+
+Does this question relate to employment, career, work, or job interviewing?
+
+CRITICAL TEST: Is this about evaluating someone for a job, or is it general knowledge/off-topic?
+- If about employment/career → RELEVANT
+- If general knowledge/unrelated → IRRELEVANT
+
+Answer with exactly one word: RELEVANT or IRRELEVANT`
+
+  try {
+    const response = await openaiService.generateChatCompletion([
+      { role: 'user', content: relevancePrompt }
+    ], {
+      model: 'gpt-4o-mini',
+      temperature: 0,
+      maxTokens: 10
+    })
+
+    const answer = response.content?.toUpperCase().trim() || ''
+    // Check for IRRELEVANT first (since "IRRELEVANT" contains "RELEVANT")
+    const isRelevant = !answer.includes('IRRELEVANT') && answer.includes('RELEVANT')
+
+    return isRelevant
+
+  } catch (error) {
+    console.error('Relevance check failed:', error)
+    // On error, assume relevant to avoid blocking legitimate queries
+    return true
+  }
+}
+
+// Helper: Validate if search results can answer the query
+async function validateSearchResults(
+  query: string,
+  searchResults: SearchResult[]
+): Promise<boolean> {
+  if (searchResults.length === 0) {
+    return false
+  }
+
+  const topChunks = searchResults
+    .slice(0, 3)
+    .map(r => r.chunk.content)
+    .join('\n\n')
+    .slice(0, 1500)
+
+  const validationPrompt = `You are evaluating retrieved information.
+
+QUESTION: "${query}"
+
+RETRIEVED INFORMATION:
+${topChunks}
+
+Can you answer the question using ONLY the information above?
+
+RULES:
+- YES only if information directly answers the question
+- NO if information is tangentially related but doesn't answer
+- NO if you'd need to infer or assume beyond what's stated
+
+Answer: YES or NO`
+
+  try {
+    const response = await openaiService.generateChatCompletion([
+      { role: 'user', content: validationPrompt }
+    ], {
+      model: 'gpt-4o-mini',
+      temperature: 0,
+      maxTokens: 5
+    })
+
+    return response.content?.toLowerCase().includes('yes') || false
+
+  } catch (error) {
+    console.error('Content validation failed:', error)
+    return false
+  }
+}
+
+// Helper: Generate off-topic polite decline response
+async function generateOffTopicResponse(
+  query: string,
+  conversationHistory: string
+): Promise<string> {
+  const offTopicPrompt = `You are an AI assistant representing a professional candidate in job interviews.
+
+CONVERSATION HISTORY:
+${conversationHistory}
+
+USER QUESTION: "${query}"
+
+This question is not related to your professional background. Politely redirect the conversation back to your professional experience.
+
+GUIDELINES:
+- Be polite and natural, not robotic
+- Acknowledge the question briefly
+- Gently redirect to your professional background
+- Use lowercase "i" (not "I")
+- Keep it conversational and brief (1-2 sentences)
+- Vary your response - don't use the same phrasing every time
+
+EXAMPLES of natural redirects:
+- "hmm, i'm not really equipped to answer that - i'm here to talk about my professional experience though. anything you'd like to know about my work?"
+- "that's a bit outside my wheelhouse... but i'd be happy to discuss my background in tech and program management if that helps?"
+- "i don't think i can help with that, but i can share about my experience in ML systems and trust & safety if you're interested?"
+
+Generate your natural redirect response:`
+
+  try {
+    const response = await openaiService.generateChatCompletion([
+      { role: 'user', content: offTopicPrompt }
+    ], {
+      model: 'gpt-4o-mini',
+      temperature: 0.8,
+      maxTokens: 100
+    })
+
+    return response.content || "i think that's outside my scope - i'm here to answer questions about my professional background. anything about my work you'd like to know?"
+  } catch (error) {
+    console.error('Failed to generate off-topic response:', error)
+    return "i think that's outside my scope - i'm here to answer questions about my professional background. anything about my work you'd like to know?"
+  }
+}
+
 export async function POST(request: NextRequest) {
   try {
     // Apply rate limiting
@@ -39,6 +168,10 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       )
     }
+
+    // Note: Relevance check moved to AFTER search as a fallback
+    // This allows questions that seem general but are actually about the candidate's
+    // projects/experience to be answered (e.g., "recipes for Korean baby food" → koreanbabymeals.com)
 
     // Get client IP for rate limiting (future enhancement)
     // const ipAddress = request.headers.get('x-forwarded-for') ||
@@ -143,6 +276,120 @@ export async function POST(request: NextRequest) {
       maxSimilarity
     })
 
+    // CONTENT VALIDATION - for low/moderate confidence queries, validate if chunks can answer
+    let shouldRedirectToLinkedIn = false
+    let shouldDeclineOffTopic = false
+
+    if (searchAnalysis.confidenceLevel === 'low' || searchAnalysis.confidenceLevel === 'moderate') {
+      const canAnswer = await validateSearchResults(message, searchResponse.results)
+
+      if (!canAnswer) {
+        // Check if query is even relevant to the candidate's background
+        const isRelevant = await checkQueryRelevance(message)
+
+        if (isRelevant) {
+          // Relevant but no answer → LinkedIn redirect
+          shouldRedirectToLinkedIn = true
+        } else {
+          // Not relevant → polite off-topic decline
+          shouldDeclineOffTopic = true
+        }
+      }
+    } else if (searchAnalysis.confidenceLevel === 'none') {
+      // Very low confidence - check relevance first
+      const isRelevant = await checkQueryRelevance(message)
+
+      if (isRelevant) {
+        shouldRedirectToLinkedIn = true
+      } else {
+        shouldDeclineOffTopic = true
+      }
+    }
+
+    // Handle off-topic queries before generating response
+    if (shouldDeclineOffTopic) {
+      const context = await conversationService.getContext(sessionId)
+      if (!context) {
+        return NextResponse.json(
+          { success: false, message: 'Session not found' },
+          { status: 404 }
+        )
+      }
+
+      const conversationHistory = context.messages
+        .slice(-4)
+        .map(msg => `${msg.role}: ${msg.content}`)
+        .join('\n')
+
+      const offTopicContent = await generateOffTopicResponse(message, conversationHistory)
+
+      const userMessage = { role: 'user' as const, content: message }
+      const offTopicResponse = { role: 'assistant' as const, content: offTopicContent }
+
+      await conversationService.addMessage(sessionId, userMessage)
+      const finalContext = await conversationService.addMessage(sessionId, offTopicResponse)
+
+      // Handle streaming vs non-streaming for off-topic
+      if (stream) {
+        const encoder = new TextEncoder()
+        const streamResponse = new ReadableStream({
+          async start(controller) {
+            try {
+              const metadata = JSON.stringify({
+                type: 'metadata',
+                search: { resultsCount: 0, categories: {}, processingTime: 0 },
+                sources: [],
+                offTopic: true
+              })
+              controller.enqueue(encoder.encode(`data: ${metadata}\n\n`))
+
+              for (const char of offTopicContent) {
+                const chunk = JSON.stringify({ type: 'token', content: char })
+                controller.enqueue(encoder.encode(`data: ${chunk}\n\n`))
+              }
+
+              const completion = JSON.stringify({
+                type: 'done',
+                context: {
+                  status: conversationService.getContextStatus(finalContext.tokenCount),
+                  tokenCount: finalContext.tokenCount,
+                  messageCount: finalContext.messages.length
+                }
+              })
+              controller.enqueue(encoder.encode(`data: ${completion}\n\n`))
+              controller.close()
+            } catch (error) {
+              console.error('Error in off-topic streaming:', error)
+              controller.error(error)
+            }
+          }
+        })
+
+        return new NextResponse(streamResponse, {
+          headers: {
+            'Content-Type': 'text/event-stream',
+            'Cache-Control': 'no-cache',
+            'Connection': 'keep-alive',
+            ...rateLimitResult.headers
+          }
+        })
+      } else {
+        return NextResponse.json({
+          success: true,
+          response: offTopicContent,
+          offTopic: true,
+          sources: [],
+          context: {
+            status: conversationService.getContextStatus(finalContext.tokenCount),
+            tokenCount: finalContext.tokenCount,
+            messageCount: finalContext.messages.length
+          }
+        }, {
+          headers: rateLimitResult.headers
+        })
+      }
+    }
+
     // Create AI prompt with rich authenticity context
     const systemPrompt = `You are an AI assistant representing a professional candidate in conversations with recruiters and hiring managers.
 
@@ -181,13 +428,12 @@ AUTHENTICITY GUIDELINES:
 - Moderate confidence: Use appropriate uncertainty ("I believe", "I think")
 - Low/No confidence: Be honest about not having the information
 
-LINKEDIN REDIRECT RULES:
-- ONLY suggest LinkedIn when you genuinely don't have the information
-- HIGH/MODERATE confidence answers should NOT include LinkedIn suggestions
-- Only use LinkedIn redirect for:
-  * Questions you can't answer at all
-  * Very specific details not in the knowledge base
-  * When the same person has asked multiple unknowable questions
+${shouldRedirectToLinkedIn ? `CRITICAL - MISSING INFORMATION DETECTED:
+You don't have enough information to answer this question. Respond with:
+"i don't have that information in my knowledge base. you can reach out to me directly on LinkedIn to discuss: https://www.linkedin.com/in/rayanastanek/"` : `RESPONSE GUIDELINES:
+- You have sufficient information to answer this question
+- Respond naturally based on the retrieved context
+- Do NOT suggest LinkedIn contact for this query`}
 
 COMMUNICATION STYLE (INFP-T personality):
 - Casual but thoughtful tone
@@ -223,7 +469,8 @@ ${conversationHistory}`
         searchResponse,
         contextWithUserMessage,
         contextHash,
-        rateLimitResult
+        rateLimitResult,
+        shouldRedirectToLinkedIn
       })
     } else {
       // Non-streaming response (existing logic)
@@ -256,7 +503,8 @@ ${conversationHistory}`
       const [finalContext] = await Promise.all([
         conversationService.addMessage(sessionId, assistantMessage),
         // Cache the response in background - don't wait for it
-        (async () => {
+        // Skip caching for LinkedIn redirects (generic responses, unlikely to benefit from cache)
+        !shouldRedirectToLinkedIn ? (async () => {
           try {
             const queryEmbedding = await openaiService.generateEmbedding(message)
             await responseCacheService.storeResponse(
@@ -270,7 +518,7 @@ ${conversationHistory}`
             console.error('Failed to cache response:', cacheError)
             // Don't fail the request for caching errors
           }
-        })()
+        })() : Promise.resolve()
       ])
 
       // Return successful response
@@ -326,7 +574,8 @@ async function handleStreamingResponse({
   searchResponse,
   contextWithUserMessage,
   contextHash,
-  rateLimitResult
+  rateLimitResult,
+  shouldRedirectToLinkedIn
 }: {
   message: string
   sessionId: string
@@ -335,6 +584,7 @@ async function handleStreamingResponse({
   contextWithUserMessage: any
   contextHash: string
   rateLimitResult: any
+  shouldRedirectToLinkedIn: boolean
 }) {
   const encoder = new TextEncoder()
 
@@ -395,9 +645,10 @@ async function handleStreamingResponse({
         }
 
         // Update context and cache in background
+        // Skip caching for LinkedIn redirects (generic responses, unlikely to benefit from cache)
         Promise.all([
           conversationService.addMessage(sessionId, assistantMessage),
-          (async () => {
+          !shouldRedirectToLinkedIn ? (async () => {
             try {
               const queryEmbedding = await openaiService.generateEmbedding(message)
               await responseCacheService.storeResponse(
@@ -410,7 +661,7 @@ async function handleStreamingResponse({
             } catch (cacheError) {
               console.error('Failed to cache streaming response:', cacheError)
             }
-          })()
+          })() : Promise.resolve()
         ]).then(([finalContext]) => {
           // Send final metadata
           const finalData = JSON.stringify({
@@ -432,7 +683,7 @@ async function handleStreamingResponse({
         console.error('Streaming error:', error)
         const errorData = JSON.stringify({
           type: 'error',
-          error: 'Failed to generate streaming response'
+          error: error instanceof Error ? error.message : 'Failed to generate streaming response'
         })
         controller.enqueue(encoder.encode(`data: ${errorData}\n\n`))
         controller.close()

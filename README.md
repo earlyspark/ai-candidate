@@ -8,7 +8,7 @@ An AI-powered candidate agent that represents you professionally for initial scr
 - **Advanced RAG System**: Semantic search with multi-granularity chunking and cross-reference ranking
 - **Authentic Communication**: LLM-driven authenticity with confidence-based response calibration
 - **Content Management**: Admin interface for managing resume, experience stories, projects, and skills
-- **Smart Tagging System**: AI-powered content analysis with organic tag suggestions
+- **AI-Assisted Tagging System**: Hybrid tagging with LLM-generated suggestions, existing tag vocabulary, and manual override
 - **Response Caching**: High-performance caching system for fast response times
 - **Rate Limiting**: Built-in protections that throttle chat traffic per client
 - **Temporal Query Intelligence**: Context-aware processing with recency detection
@@ -139,6 +139,60 @@ The system uses **category-specific chunking** with AI-powered intelligence to o
 - **Domain Organization**: Categorizes by technical areas (frontend, backend, tools, etc.)
 
 This intelligent processing ensures that when recruiters ask questions, the AI can provide precise, contextually-aware responses that maintain the authentic structure and relationships of your professional content.
+
+### AI-Assisted Tagging System
+
+The system uses a **hybrid approach** that combines AI intelligence with user control for efficient, consistent tagging:
+
+#### How It Works
+
+The tagging system provides multiple ways to tag your content efficiently:
+
+1. **Manual AI Analysis** (Optional): Click "Analyze Content" to get AI-generated tag suggestions
+   - Uses GPT-4o-mini to analyze your content and suggest 5-8 relevant tags
+   - Focuses on skills, technologies, roles, and key concepts
+   - Example: "Built a React app with TypeScript" → suggests `react`, `typescript`, `frontend`, `web-development`
+   - You can add individual tags or add all suggestions at once
+
+2. **Autocomplete** (As you type): Start typing in the tag field to see previous tags you've used
+   - Activates after typing 2+ characters
+   - Suggests tags from your historical usage that match what you're typing
+   - Ensures consistent naming (e.g., always `react` not `reactjs` or `react.js`)
+   - **Note**: Only works once you've created some tagged content
+
+3. **Example Tags** (Quick shortcuts): Click pre-selected example tags for instant addition
+   - Category-specific examples (different for resume, projects, skills, etc.)
+   - Click the "+" button to add an example tag
+   - Serves as inspiration for common tag patterns
+
+4. **Manual Entry** (Full control): Type your own tags directly
+   - Comma-separated format: `react, typescript, team-leadership`
+   - Tags are automatically normalized to lowercase-with-hyphens format
+   - Validation ensures proper formatting (2-50 characters, no special chars)
+
+#### Tag Learning & Evolution
+
+The system tracks tag usage and learns from your choices:
+- **Usage Analytics**: Tracks which tags you use most frequently (stored in `tag_usage` table)
+- **Category Patterns**: Remembers which tags work best for each content type
+- **Autocomplete Source**: Your previously-used tags populate the autocomplete suggestions as you type
+- **Consolidation Detection**: Identifies similar tags that might need merging (e.g., `js` vs `javascript`, `React` vs `react`)
+
+#### Performance Optimization
+
+**Tag Suggestions Cache** (`tag_suggestions_cache` table):
+- **Content-based hashing**: SHA-256 hash identifies duplicate content
+- **7-day TTL**: AI-generated suggestions are cached for a week
+- **Hit tracking**: Monitors which suggestions are most useful
+- **Cost reduction**: Clicking "Analyze Content" twice on same content = instant cached response (no LLM call)
+
+**First-Time User Experience**:
+- **Manual entry**: Start by manually entering tags for your first few pieces of content
+- **Use examples**: Click the example tags provided for each category to build your tag vocabulary
+- **AI assist**: Click "Analyze Content" to get AI suggestions for complex content
+- **Autocomplete grows**: As you tag more content, autocomplete becomes more useful
+
+This hybrid approach saves you time while ensuring tags remain consistent, relevant, and aligned with your professional vocabulary.
 
 ### Advanced RAG System
 - Multi-granularity content chunking with semantic boundary detection
