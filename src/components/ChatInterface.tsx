@@ -312,7 +312,7 @@ export default function ChatInterface({ sessionId, onContextUpdate }: ChatInterf
             <p className="text-sm text-gray-400">
               I'm an AI chatbot that answers questions on RayAna's professional background.{' '}
               <a
-                href="https://www.linkedin.com/in/rayanastanek/"
+                href="https://www.linkedin.com/posts/rayanastanek_vibecoding-futureofwork-activity-7382683633628856320-Bp17"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-purple-400 hover:text-purple-300 visited:text-purple-400 underline underline-offset-2"
