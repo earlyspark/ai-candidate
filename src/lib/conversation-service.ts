@@ -211,6 +211,13 @@ export class ConversationService {
         .eq('session_id', sessionId)
 
       if (error) {
+        console.error('Supabase conversation update error:', {
+          error,
+          errorMessage: error.message,
+          errorDetails: error.details,
+          errorHint: error.hint,
+          sessionId
+        })
         throw new Error(`Failed to update conversation: ${error.message}`)
       }
 

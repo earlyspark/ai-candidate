@@ -23,6 +23,9 @@ export interface SearchThresholds {
   // Database-level thresholds
   vector_search_db: number    // Applied at database vector search level
 
+  // Tag matching boost
+  tag_match_boost: number     // Boost per matching tag (e.g., 0.15 = 15% boost)
+
   // Response caching thresholds
   cache_similarity: number    // For determining cache hits (higher = more strict)
 }
@@ -53,6 +56,7 @@ const DEFAULT_SEARCH_CONFIG: SearchConfig = {
 
     // Database and caching
     vector_search_db: 0.23,     // Database-level filtering
+    tag_match_boost: 0.15,      // 15% boost per matching tag
     cache_similarity: 0.85,     // Cache hits (much higher threshold)
   },
   embedding_model: 'text-embedding-3-small',

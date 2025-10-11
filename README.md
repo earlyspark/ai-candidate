@@ -85,6 +85,16 @@ src/
 
 ## Key Concepts
 
+### Session Management
+
+The chat interface uses **sessionStorage** for conversation continuity:
+- **Session Persistence**: Conversations survive page refreshes within the same tab
+- **Fresh Start on Close**: Closing the tab creates a clean session when reopened
+- **No Cross-Tab Sharing**: Each browser tab has its own independent conversation
+- **User Control**: "Start Fresh" button available for manual session reset
+
+This design balances conversation continuity with fresh-start functionality, ensuring users can maintain context during a single browsing session while getting a clean slate when returning later.
+
 ### Content Categories
 The system organizes content into 5 specialized categories optimized for different recruiter question types:
 
@@ -195,12 +205,14 @@ The system tracks tag usage and learns from your choices:
 This hybrid approach saves you time while ensuring tags remain consistent, relevant, and aligned with your professional vocabulary.
 
 ### Advanced RAG System
-- Multi-granularity content chunking with semantic boundary detection
-- Cross-reference ranking with hierarchical relationship analysis
-- Temporal query intelligence with recency-based confidence scoring
-- LLM-driven response authenticity with confidence calibration
-- OpenAI embeddings enable semantic search across professional content
-- High-performance response caching for sub-second response times
+- **Hybrid Search Formula**: Combines semantic similarity (60%), category relevance (25%), and tag matching (15%)
+- **Tag-Weighted Search**: Lightweight keyword extraction boosts results when query terms match content tags
+- **Multi-Granularity Chunking**: Semantic boundary detection with hierarchical relationship analysis
+- **Temporal Query Intelligence**: Recency-based confidence scoring for "recent", "latest", "current" queries
+- **Cross-Reference Ranking**: Related content discovery across categories
+- **LLM-Driven Authenticity**: Confidence calibration with prompt-based response tuning
+- **Dual-Table Architecture**: Separate content management (`knowledge_versions`) and search (`knowledge_chunks`) for performance
+- **High-Performance Caching**: Semantic similarity matching for sub-second response times
 
 ## Development
 

@@ -148,7 +148,7 @@ export default function TagInput({ category, value, onChange, placeholder }: Tag
                 className={`px-3 py-2 cursor-pointer text-sm ${
                   index === selectedSuggestionIndex
                     ? 'bg-blue-100 text-blue-900'
-                    : 'hover:bg-gray-50'
+                    : 'text-gray-900 hover:bg-gray-50'
                 }`}
               >
                 {suggestion}

@@ -12,14 +12,14 @@ export default function ChatPage() {
   useEffect(() => {
     const initializeSession = async () => {
       try {
-        // Check if we already have a session ID in localStorage
-        const existingSessionId = localStorage.getItem('chat-session-id')
-        
+        // Check if we already have a session ID in sessionStorage (tab-specific)
+        const existingSessionId = sessionStorage.getItem('chat-session-id')
+
         if (existingSessionId) {
           // Verify the session still exists
           const response = await fetch(`/api/conversations?sessionId=${existingSessionId}`)
           const data = await response.json()
-          
+
           if (data.success) {
             setSessionId(existingSessionId)
             setIsInitializing(false)
@@ -39,13 +39,13 @@ export default function ChatPage() {
         })
 
         const data = await response.json()
-        
+
         if (!data.success) {
           throw new Error('Failed to create chat session')
         }
 
         setSessionId(data.sessionId)
-        localStorage.setItem('chat-session-id', data.sessionId)
+        sessionStorage.setItem('chat-session-id', data.sessionId)
         
       } catch (error) {
         console.error('Error initializing chat session:', error)

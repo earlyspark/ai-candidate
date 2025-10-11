@@ -51,6 +51,7 @@ export default function ContentManagement() {
   const [activeTab, setActiveTab] = useState<ContentCategory>('resume')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [message, setMessage] = useState('')
+  const [editingId, setEditingId] = useState<number | null>(null)
 
   const [form, setForm] = useState<ContentForm>({
     category: 'resume',
@@ -118,27 +119,35 @@ export default function ContentManagement() {
         body: JSON.stringify({
           category: form.category,
           content: form.content,
-          tags: form.tags ? form.tags.split(',').map(tag => tag.trim()).filter(Boolean) : []
+          tags: form.tags ? form.tags.split(',').map(tag => tag.trim()).filter(Boolean) : [],
+          editingId: editingId // Include editing ID when updating existing content
         }),
       })
 
       if (response.ok) {
         const result = await response.json()
-        
-        let successMessage = 'Content processed successfully!'
+
+        const actionType = editingId ? 'updated' : 'created'
+        let successMessage = `Content ${actionType} successfully!`
+
+        if (result.version && editingId) {
+          successMessage += ` (Now version ${result.version})`
+        }
+
         if (result.processing) {
           successMessage += ` Created ${result.processing.totalChunks} chunks in ${result.processing.processingTime}ms.`
           if (result.processing.hasDualPurpose) {
             successMessage += ' Dual-purpose processing applied for style analysis.'
           }
         }
-        
+
         if (result.validation?.warnings?.length > 0) {
           successMessage += ` Warnings: ${result.validation.warnings.join(', ')}`
         }
-        
+
         setMessage(successMessage)
         setForm({ ...form, content: '', tags: '' })
+        setEditingId(null) // Clear editing state
         loadExistingContent() // Refresh the content list
       } else {
         const error = await response.json()
@@ -297,19 +306,39 @@ export default function ContentManagement() {
               {/* Submit Button */}
               <div className="flex items-center justify-between">
                 <div>
+                  {editingId && (
+                    <p className="text-sm text-blue-600 mb-2">
+                      ✏️ Editing existing content - saving will create version {form.content ? '(increment)' : ''} and deactivate the old version
+                    </p>
+                  )}
                   {message && (
                     <p className={`text-sm ${message.includes('Error') ? 'text-red-600' : 'text-green-600'}`}>
                       {message}
                     </p>
                   )}
                 </div>
-                <button
-                  type="submit"
-                  disabled={isSubmitting || !form.content.trim()}
-                  className="bg-blue-600 text-white px-6 py-2 rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {isSubmitting ? 'Processing...' : 'Save & Process'}
-                </button>
+                <div className="flex gap-2">
+                  {editingId && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingId(null)
+                        setForm({ ...form, content: '', tags: '' })
+                        setMessage('')
+                      }}
+                      className="bg-gray-500 text-white px-6 py-2 rounded-md hover:bg-gray-600"
+                    >
+                      New Content Instead
+                    </button>
+                  )}
+                  <button
+                    type="submit"
+                    disabled={isSubmitting || !form.content.trim()}
+                    className="bg-blue-600 text-white px-6 py-2 rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {isSubmitting ? 'Processing...' : editingId ? 'Update (Create New Version)' : 'Save & Process'}
+                  </button>
+                </div>
               </div>
             </form>
           </div>
@@ -371,7 +400,9 @@ export default function ContentManagement() {
                                     content: item.content,
                                     tags: item.tags ? item.tags.join(', ') : ''
                                   })
+                                  setEditingId(item.id) // Track which content we're editing
                                   setShowExisting(false)
+                                  setMessage('') // Clear any previous messages
                                   // Scroll to top of form
                                   document.querySelector('.bg-white.shadow.rounded-lg')?.scrollIntoView({ behavior: 'smooth' })
                                 }}

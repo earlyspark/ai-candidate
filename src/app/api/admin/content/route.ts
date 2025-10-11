@@ -20,7 +20,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const { category, content, tags } = await request.json()
+    const { category, content, tags, editingId } = await request.json()
 
     // Validate input
     if (!category || !content) {
@@ -43,7 +43,7 @@ export async function POST(request: NextRequest) {
     const contentValidation = chunkingService.validateContent(category as ContentCategory, content)
     if (!contentValidation.isValid) {
       return NextResponse.json(
-        { 
+        {
           message: 'Content validation failed',
           errors: contentValidation.errors,
           warnings: contentValidation.warnings
@@ -55,20 +55,75 @@ export async function POST(request: NextRequest) {
     // Process and validate tags
     const processedTags = tags && Array.isArray(tags) ? tags.filter(tag => tag.trim().length > 0) : []
     let validatedTags: string[] = []
-    
+
     if (processedTags.length > 0) {
       const tagValidation = await taggingService.processTags(processedTags.join(', '), category)
       validatedTags = tagValidation.normalizedTags
     }
 
-    // Save to knowledge_versions table first
+    // Handle versioning logic - ONLY when editing existing content
+    let newVersion = 1
+    let oldVersionId: number | null = null
+
+    // Convert editingId to number if it's a string, handle null/undefined
+    const parsedEditingId = editingId ? (typeof editingId === 'string' ? parseInt(editingId, 10) : editingId) : null
+
+    if (parsedEditingId) {
+      // User is editing specific content - this is a version update
+      // Get the content being edited
+      const { data: existingContent, error: fetchError } = await supabaseAdmin
+        .from('knowledge_versions')
+        .select('id, version')
+        .eq('id', parsedEditingId)
+        .single()
+
+      if (fetchError) {
+        console.error('Error fetching content to edit:', fetchError)
+        return NextResponse.json(
+          { message: 'Content to edit not found' },
+          { status: 404 }
+        )
+      }
+
+      // Calculate next version number for this specific content
+      newVersion = existingContent.version + 1
+      oldVersionId = existingContent.id
+
+      // Deactivate ONLY this specific old version
+      const { error: deactivateError } = await supabaseAdmin
+        .from('knowledge_versions')
+        .update({ active: false })
+        .eq('id', oldVersionId)
+
+      if (deactivateError) {
+        console.error('Error deactivating old version:', deactivateError)
+        return NextResponse.json(
+          { message: 'Error deactivating old version' },
+          { status: 500 }
+        )
+      }
+
+      // Delete chunks associated with the old version
+      const { error: deleteChunksError } = await supabaseAdmin
+        .from('knowledge_chunks')
+        .delete()
+        .eq('metadata->>sourceId', String(oldVersionId))
+
+      if (deleteChunksError) {
+        console.error(`Error deleting chunks for old version:`, deleteChunksError)
+      }
+
+      console.log(`Deactivated version ID:${oldVersionId} and created version ${newVersion}`)
+    }
+
+    // Save new version to knowledge_versions table
     const { data: versionData, error: versionError } = await supabaseAdmin
       .from('knowledge_versions')
       .insert({
         category,
         content,
         tags: validatedTags,
-        version: 1, // We'll implement versioning later
+        version: newVersion,
         active: true
       })
       .select()
@@ -183,6 +238,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       message: 'Content processed successfully with hierarchical chunking',
       versionId: versionData.id,
+      version: versionData.version,
+      isUpdate: parsedEditingId !== null && parsedEditingId !== undefined,
       processing: {
         totalChunks: chunkingResult.totalChunks,
         processingTime: chunkingResult.processingTime,
@@ -201,7 +258,11 @@ export async function POST(request: NextRequest) {
       } : null,
       validation: {
         warnings: contentValidation.warnings
-      }
+      },
+      versioning: parsedEditingId ? {
+        oldVersionId: oldVersionId,
+        newVersion: versionData.version
+      } : null
     })
 
   } catch (error) {

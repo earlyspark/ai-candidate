@@ -5,11 +5,13 @@ import { HierarchicalChunkService, HierarchicalChunk } from './hierarchical-chun
 import { CrossReferenceService, CrossReferenceContext, EnrichedSearchResult } from './cross-reference-service'
 import { MetadataExtractor } from './metadata-extraction'
 import SearchConfigService from './search-config'
+import { TagExtractionService } from './tag-extraction-service'
 
 export interface SearchResult {
   chunk: KnowledgeChunk
   similarity: number
   categoryScore: number
+  tagMatchScore: number
   finalScore: number
   rank: number
 }
@@ -33,6 +35,7 @@ export interface SearchResponse {
   query: string
   results: SearchResult[]
   categoryWeights: CategoryWeight[]
+  queryTags?: string[]
   searchTime: number
   embedding?: number[]
   crossReferences?: EnrichedSearchResult
@@ -52,6 +55,10 @@ export class SearchService {
     try {
       // Generate embedding for the query
       const queryEmbedding = await openaiService.generateEmbedding(query)
+
+      // Extract tags from query for tag-weighted search
+      const queryTags = TagExtractionService.extractTags(query)
+      console.log(`Extracted query tags: [${queryTags.join(', ')}]`)
 
       // Detect if this is a temporal query that would benefit from hierarchical search
       const isTemporalQuery = this.detectTemporalQuery(query)
@@ -73,12 +80,14 @@ export class SearchService {
           query,
           queryEmbedding,
           categoryWeights,
+          queryTags,
           enhancedOptions
         )
       } else {
         results = await this.performWeightedSearch(
           queryEmbedding,
           categoryWeights,
+          queryTags,
           enhancedOptions
         )
       }
@@ -152,6 +161,7 @@ export class SearchService {
         query,
         results,
         categoryWeights,
+        queryTags,
         searchTime: Date.now() - startTime,
         embedding: queryEmbedding,
         crossReferences,
@@ -412,6 +422,7 @@ Respond in JSON format:
     query: string,
     queryEmbedding: number[],
     categoryWeights: CategoryWeight[],
+    queryTags: string[],
     options: SearchOptions
   ): Promise<SearchResult[]> {
     const limit = options.limit || 10;
@@ -421,6 +432,7 @@ Respond in JSON format:
       const initialResults = await this.searchAcrossHierarchyLevels(
         queryEmbedding,
         categoryWeights,
+        queryTags,
         {
           ...options,
           limit: limit * 2, // Get more results for filtering
@@ -450,7 +462,7 @@ Respond in JSON format:
     } catch (error) {
       console.error('Error in hierarchical search:', error);
       // Fallback to standard search
-      return await this.performWeightedSearch(queryEmbedding, categoryWeights, options);
+      return await this.performWeightedSearch(queryEmbedding, categoryWeights, queryTags, options);
     }
   }
 
@@ -458,6 +470,7 @@ Respond in JSON format:
   private async searchAcrossHierarchyLevels(
     queryEmbedding: number[],
     categoryWeights: CategoryWeight[],
+    queryTags: string[],
     options: SearchOptions
   ): Promise<SearchResult[]> {
     const allResults: SearchResult[] = [];
@@ -502,13 +515,26 @@ Respond in JSON format:
           // Apply category weighting
           const categoryWeight = categoryWeights.find(cw => cw.category === chunk.category)?.weight || 0.5;
 
-          // Calculate final score with level weighting
-          const finalScore = similarity * categoryWeight * levelWeight;
+          // Calculate tag match score
+          let tagMatchScore = 0;
+          if (queryTags.length > 0 && chunk.metadata?.tags) {
+            const chunkTags = Array.isArray(chunk.metadata.tags) ? chunk.metadata.tags : [];
+            const matchingTags = queryTags.filter(qt =>
+              chunkTags.some((ct: unknown) => String(ct).toLowerCase() === qt.toLowerCase())
+            );
+            const tagBoost = (await SearchConfigService.getThresholds()).tag_match_boost;
+            tagMatchScore = matchingTags.length * tagBoost;
+          }
+
+          // Calculate final score with level weighting and tag boost
+          // Adjusted weights: semantic 60%, category 25%, tags 15%
+          const finalScore = (similarity * 0.60 + categoryWeight * 0.25 + tagMatchScore * 0.15) * levelWeight;
 
           allResults.push({
             chunk: chunk as KnowledgeChunk,
             similarity,
             categoryScore: categoryWeight,
+            tagMatchScore,
             finalScore,
             rank: 0 // Will be set during ranking
           });
@@ -577,6 +603,7 @@ Respond in JSON format:
                 chunk: knowledgeChunk,
                 similarity,
                 categoryScore: 0.8, // High score for related content
+                tagMatchScore: 0,
                 finalScore: similarity * 0.8,
                 rank: 0
               });
@@ -614,6 +641,7 @@ Respond in JSON format:
                 chunk: knowledgeChunk,
                 similarity,
                 categoryScore: 0.7,
+                tagMatchScore: 0,
                 finalScore: similarity * 0.7,
                 rank: 0
               });
@@ -685,12 +713,14 @@ Respond in JSON format:
   private async performWeightedSearch(
     queryEmbedding: number[],
     categoryWeights: CategoryWeight[],
+    queryTags: string[],
     options: SearchOptions
   ): Promise<SearchResult[]> {
     const limit = options.limit || 10
     // Get dynamic threshold from centralized config
     const threshold = options.threshold || await SearchConfigService.getMethodThreshold('weighted')
-    
+    const tagBoost = (await SearchConfigService.getThresholds()).tag_match_boost
+
     try {
       // Convert category weights to the format expected by the SQL function
       const categoryWeightMap = categoryWeights.reduce((acc, cw) => {
@@ -702,7 +732,9 @@ Respond in JSON format:
         query_embedding: queryEmbedding,
         match_threshold: threshold,
         match_count: limit,
-        category_weights: categoryWeightMap
+        category_weights: categoryWeightMap,
+        query_tags: queryTags,
+        tag_boost: tagBoost
       })
 
       if (error) {
@@ -716,7 +748,7 @@ Respond in JSON format:
 
       // Process and rank results
       const results: SearchResult[] = chunks
-        .map((chunk: KnowledgeChunk & { similarity?: number; category_weight?: number; final_score?: number }, index: number) => ({
+        .map((chunk: KnowledgeChunk & { similarity?: number; category_weight?: number; tag_match_score?: number; final_score?: number }, index: number) => ({
           chunk: {
             id: chunk.id,
             content: chunk.content,
@@ -728,6 +760,7 @@ Respond in JSON format:
           },
           similarity: chunk.similarity || 0,
           categoryScore: chunk.category_weight || 0.3,
+          tagMatchScore: chunk.tag_match_score || 0,
           finalScore: chunk.final_score || chunk.similarity || 0,
           rank: index + 1
         }))
@@ -809,6 +842,7 @@ Respond in JSON format:
             chunk: { ...chunk, embedding: emb },
             similarity,
             categoryScore: 0.5,
+            tagMatchScore: 0,
             finalScore: similarity,
             rank: 0
           })

@@ -12,15 +12,23 @@ export const dynamic = 'force-dynamic'
 
 // Helper: Check if query is relevant to candidate's professional background
 async function checkQueryRelevance(query: string): Promise<boolean> {
-  const relevancePrompt = `Classify if a question relates to employment/career topics.
+  const relevancePrompt = `Classify if a question relates to employment/career topics or job interviewing.
 
 QUESTION: "${query}"
 
 Does this question relate to employment, career, work, or job interviewing?
 
-CRITICAL TEST: Is this about evaluating someone for a job, or is it general knowledge/off-topic?
-- If about employment/career → RELEVANT
-- If general knowledge/unrelated → IRRELEVANT
+RELEVANT questions include:
+- Work experience, skills, projects, achievements
+- Interview questions (strengths, weaknesses, work style, hobbies, interests)
+- Cultural fit questions (values, motivations, preferences)
+- Career goals, background, education
+- Personal questions commonly asked by recruiters
+
+IRRELEVANT questions include:
+- Unrelated topics (sports scores, weather, news)
+- Protected class information (ethnicity, race, age, religion, marital status, sexual orientation, disability status)
+- Inappropriate/illegal interview questions
 
 Answer with exactly one word: RELEVANT or IRRELEVANT`
 
@@ -55,29 +63,45 @@ async function validateSearchResults(
     return false
   }
 
-  const topChunks = searchResults
+  // Include tags in the validation context
+  const topChunksWithTags = searchResults
     .slice(0, 3)
-    .map(r => r.chunk.content)
+    .map(r => {
+      const tags = r.chunk.metadata?.tags as string[] | undefined
+      const tagInfo = tags && tags.length > 0 ? `[Tagged: ${tags.join(', ')}]` : ''
+      return `${tagInfo}\n${r.chunk.content}`
+    })
     .join('\n\n')
     .slice(0, 1500)
 
-  const validationPrompt = `You are evaluating retrieved information.
+  const validationPrompt = `You are evaluating retrieved information for an interview question.
 
 QUESTION: "${query}"
 
-RETRIEVED INFORMATION:
-${topChunks}
+RETRIEVED INFORMATION (with content tags):
+${topChunksWithTags}
 
-Can you answer the question using ONLY the information above?
+Can you provide a reasonable answer to the question using the information above?
 
-RULES:
-- YES only if information directly answers the question
-- NO if information is tangentially related but doesn't answer
-- NO if you'd need to infer or assume beyond what's stated
+CRITICAL RULE - TAG TRUST:
+- If content has a tag that matches the question topic (e.g., "hobbies" tag for "what are your hobbies"), answer YES
+- Tags indicate the candidate explicitly wants to use this content for that topic
+- Even if content seems indirect, tags override - trust the candidate's curation
+
+OTHER RULES:
+- YES if information directly answers the question
+- YES if you can reasonably infer an answer from the context
+- YES if you can synthesize a reasonable answer from the context
+- Consider whether the specific information needed is actually present (not just related context)
+- NO if content is completely unrelated AND has no matching tags
 
 Answer: YES or NO`
 
   try {
+    console.log('\n=== VALIDATION CHECK ===')
+    console.log('Query:', query)
+    console.log('Top chunks preview:', topChunksWithTags.substring(0, 300))
+
     const response = await openaiService.generateChatCompletion([
       { role: 'user', content: validationPrompt }
     ], {
@@ -86,7 +110,12 @@ Answer: YES or NO`
       maxTokens: 5
     })
 
-    return response.content?.toLowerCase().includes('yes') || false
+    const canAnswer = response.content?.toLowerCase().includes('yes') || false
+    console.log('Validation response:', response.content)
+    console.log('Can answer:', canAnswer)
+    console.log('======================\n')
+
+    return canAnswer
 
   } catch (error) {
     console.error('Content validation failed:', error)
@@ -115,11 +144,6 @@ GUIDELINES:
 - Use lowercase "i" (not "I")
 - Keep it conversational and brief (1-2 sentences)
 - Vary your response - don't use the same phrasing every time
-
-EXAMPLES of natural redirects:
-- "hmm, i'm not really equipped to answer that - i'm here to talk about my professional experience though. anything you'd like to know about my work?"
-- "that's a bit outside my wheelhouse... but i'd be happy to discuss my background in tech and program management if that helps?"
-- "i don't think i can help with that, but i can share about my experience in ML systems and trust & safety if you're interested?"
 
 Generate your natural redirect response:`
 
@@ -212,8 +236,15 @@ export async function POST(request: NextRequest) {
       }
       
       // Update conversation with both messages
-      await conversationService.addMessage(sessionId, userMessage)
-      const updatedContext = await conversationService.addMessage(sessionId, assistantMessage)
+      let updatedContext
+      try {
+        await conversationService.addMessage(sessionId, userMessage)
+        updatedContext = await conversationService.addMessage(sessionId, assistantMessage)
+      } catch (convError) {
+        console.error('Failed to save cached conversation:', convError)
+        // Continue without saving - cached response is still valid
+        updatedContext = { tokenCount: 0, messages: [] }
+      }
       
       return NextResponse.json({
         success: true,
@@ -242,8 +273,22 @@ export async function POST(request: NextRequest) {
       role: 'user' as const,
       content: message
     }
-    
-    const contextWithUserMessage = await conversationService.addMessage(sessionId, userMessage)
+
+    let contextWithUserMessage
+    try {
+      contextWithUserMessage = await conversationService.addMessage(sessionId, userMessage)
+    } catch (convError) {
+      console.error('Failed to add user message to conversation:', convError)
+      // Continue with empty context - don't fail the entire request
+      contextWithUserMessage = {
+        sessionId,
+        messages: [userMessage],
+        entities: [],
+        currentTopic: '',
+        lastActivity: new Date(),
+        tokenCount: 0
+      }
+    }
     
     // Perform RAG search
     console.log(`Performing RAG search for: "${message.substring(0, 50)}..."`)
@@ -326,8 +371,15 @@ export async function POST(request: NextRequest) {
       const userMessage = { role: 'user' as const, content: message }
       const offTopicResponse = { role: 'assistant' as const, content: offTopicContent }
 
-      await conversationService.addMessage(sessionId, userMessage)
-      const finalContext = await conversationService.addMessage(sessionId, offTopicResponse)
+      let finalContext
+      try {
+        await conversationService.addMessage(sessionId, userMessage)
+        finalContext = await conversationService.addMessage(sessionId, offTopicResponse)
+      } catch (convError) {
+        console.error('Failed to save off-topic conversation:', convError)
+        // Continue without saving - don't fail the response
+        finalContext = context
+      }
 
       // Handle streaming vs non-streaming for off-topic
       if (stream) {
@@ -349,7 +401,7 @@ export async function POST(request: NextRequest) {
               }
 
               const completion = JSON.stringify({
-                type: 'done',
+                type: 'complete',
                 context: {
                   status: conversationService.getContextStatus(finalContext.tokenCount),
                   tokenCount: finalContext.tokenCount,
@@ -416,36 +468,46 @@ CRITICAL - AMBIGUOUS DATE HANDLING:
 PERSONA GUIDELINES:
 You are representing this specific candidate based on their actual data. Respond naturally in first person as the candidate.
 
-CRITICAL - NO HALLUCINATION RULE:
+CRITICAL - CONTENT USAGE RULES:
 - ONLY use information from the RETRIEVED CONTEXT below
-- If the retrieved context doesn't contain relevant information, clearly state "I don't have that information" or "I'd need to think about that"
-- NEVER invent, assume, or make up personal details, experiences, hobbies, or facts
-- When you don't know something, be honest about it
+- NEVER invent, assume, or make up personal details, experiences, hobbies, or facts not in the context
+- If content is tagged with a topic (visible in metadata), the candidate wants you to use it for that topic
+- Trust the candidate's curation - tagged content is intentionally selected for specific questions
+- Synthesize and present information naturally without robotic hedging phrases
 
-AUTHENTICITY GUIDELINES:
-- Use natural, conversational language based on confidence level
-- High confidence: Speak naturally and directly
-- Moderate confidence: Use appropriate uncertainty ("I believe", "I think")
-- Low/No confidence: Be honest about not having the information
+RESPONSE STYLE:
+- Speak naturally and conversationally as the candidate would
+- Avoid meta-commentary like "I don't have specific information" or "I'd need to think about that"
+- If you truly have no relevant information, be brief and authentic, not formulaic
+- Adapt tone to the question - direct for facts, thoughtful for values/interests
 
-${shouldRedirectToLinkedIn ? `CRITICAL - MISSING INFORMATION DETECTED:
-You don't have enough information to answer this question. Respond with:
-"i don't have that information in my knowledge base. you can reach out to me directly on LinkedIn to discuss: https://www.linkedin.com/in/rayanastanek/"` : `RESPONSE GUIDELINES:
-- You have sufficient information to answer this question
-- Respond naturally based on the retrieved context
-- Do NOT suggest LinkedIn contact for this query`}
+ANSWER STRATEGY:
+- Be selective with retrieved information - choose the most relevant and compelling details, not everything found
+- When discussing accomplishments or strengths, highlight what makes the candidate stand out
+
+PROFESSIONAL DISCRETION:
+When asked about compensation, salary, or financial details - even if you have some work context - recognize these require deeper human discussion. Suggest connecting on LinkedIn to discuss further with the full URL: https://www.linkedin.com/in/rayanastanek/
+
+${shouldRedirectToLinkedIn ? `MISSING INFORMATION HANDLING:
+The retrieved context doesn't contain enough information to answer this question thoroughly.
+Acknowledge this naturally and suggest connecting on LinkedIn for a deeper conversation.
+Keep it conversational - no robotic templates.
+CRITICAL: Always include the full LinkedIn URL: https://www.linkedin.com/in/rayanastanek/` : `RESPONSE GUIDELINES:
+You have sufficient information to answer this question. Respond naturally based on the retrieved context without mentioning LinkedIn.`}
+
+CRITICAL FORMATTING RULES - FOLLOW EXACTLY:
+1. NEVER wrap your entire response in quotation marks
+2. Do NOT start your response with a quote and end with a quote
+3. Write naturally without surrounding quotes
+4. Only use quotes when quoting someone else's specific words
+5. Always use lowercase "i" when referring to yourself (never "I")
 
 COMMUNICATION STYLE (INFP-T personality):
 - Casual but thoughtful tone
-- CRITICAL: Always use lowercase "i" - never write "I", always write "i"
 - Use "..." when processing complex thoughts
 - Be direct but diplomatic
 - Provide clear, direct responses with relevant context when helpful
-
-STRICT FORMATTING RULES:
-- Always use lowercase "i" when referring to yourself
-- Example: "i think", "i worked", "i believe" (NOT "I think", "I worked", "I believe")
-- This is a personal communication style preference - follow it exactly
+- Write as if speaking directly to the recruiter, not as quoted text
 
 IMPORTANT - INTERVIEW DYNAMICS:
 - You are being interviewed, not conducting an interview
@@ -501,7 +563,10 @@ ${conversationHistory}`
 
       // Parallel execution: Update context and prepare cache simultaneously
       const [finalContext] = await Promise.all([
-        conversationService.addMessage(sessionId, assistantMessage),
+        conversationService.addMessage(sessionId, assistantMessage).catch(err => {
+          console.error('Failed to save assistant message:', err)
+          return { tokenCount: 0, messages: [], sessionId, entities: [], currentTopic: '', lastActivity: new Date() }
+        }),
         // Cache the response in background - don't wait for it
         // Skip caching for LinkedIn redirects (generic responses, unlikely to benefit from cache)
         !shouldRedirectToLinkedIn ? (async () => {
@@ -647,7 +712,10 @@ async function handleStreamingResponse({
         // Update context and cache in background
         // Skip caching for LinkedIn redirects (generic responses, unlikely to benefit from cache)
         Promise.all([
-          conversationService.addMessage(sessionId, assistantMessage),
+          conversationService.addMessage(sessionId, assistantMessage).catch(err => {
+            console.error('Failed to save streaming response to conversation:', err)
+            return { tokenCount: 0, messages: [], sessionId, entities: [], currentTopic: '', lastActivity: new Date() }
+          }),
           !shouldRedirectToLinkedIn ? (async () => {
             try {
               const queryEmbedding = await openaiService.generateEmbedding(message)
