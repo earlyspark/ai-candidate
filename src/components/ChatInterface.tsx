@@ -527,7 +527,7 @@ export default function ChatInterface({ sessionId, onContextUpdate }: ChatInterf
         </div>
 
         <p className="text-xs text-gray-500 mt-2 text-center">
-          This AI represents a professional candidate. Responses are based on authentic experience and preferences.
+          Information is based on my resume, a few experiences, and preferences.
         </p>
       </div>
     </div>
