@@ -40,10 +40,9 @@ export class MetadataExtractor {
       // Use LLM to intelligently extract all metadata including temporal relationships
       const llmMetadata = await this.extractWithLLM(content, category)
 
-      // Add basic temporal context determination based on LLM-extracted time references
-      if (llmMetadata.timeReferences?.length) {
-        llmMetadata.temporalContext = this.determineTemporalContext(llmMetadata.timeReferences)
-      }
+      // Note: We intentionally do NOT compute temporalContext here.
+      // Temporal context is relative and becomes stale (e.g., "current" becomes "historical" after a few years).
+      // Instead, we rely on absolute facts (timeReferences, year tags) and let the LLM compute recency at query-time.
 
       return llmMetadata
 
@@ -178,43 +177,4 @@ Rules:
     return validated
   }
 
-  // Simple temporal context determination based on time references
-  private static determineTemporalContext(timeReferences: string[]): ExtractedMetadata['temporalContext'] {
-    const currentYear = new Date().getFullYear()
-    const timeText = timeReferences.join(' ').toLowerCase()
-
-    // Check for current indicators
-    if (timeText.includes('current') || timeText.includes('now') || timeText.includes('today') ||
-        timeText.includes(currentYear.toString())) {
-      return 'current'
-    }
-
-    // Check for recent indicators
-    if (timeText.includes('recent') || timeText.includes('last year') ||
-        timeText.includes((currentYear - 1).toString())) {
-      return 'recent'
-    }
-
-    // Check for historical indicators
-    const hasOldDates = timeReferences.some(ref => {
-      const yearMatch = ref.match(/\b(19|20)\d{2}\b/)
-      if (yearMatch) {
-        const year = parseInt(yearMatch[0])
-        return year < currentYear - 2
-      }
-      return false
-    })
-
-    if (hasOldDates || timeText.includes('historical') || timeText.includes('past')) {
-      return 'historical'
-    }
-
-    // Check for mixed temporal content
-    if (timeReferences.length > 2) {
-      return 'mixed'
-    }
-
-    // Default for content without clear temporal markers
-    return 'timeless'
-  }
 }

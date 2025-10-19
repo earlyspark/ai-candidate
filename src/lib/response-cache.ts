@@ -224,6 +224,65 @@ export class ResponseCacheService {
     }
   }
 
+  // Invalidate cache entries that might be affected by new content in a category
+  // This catches cases where classification missed the category but the query was related
+  async invalidateRelatedCategories(newCategory: string): Promise<number> {
+    try {
+      // Define category relationships - when new content is added to a category,
+      // which other categories' cached responses might now be outdated?
+      const categoryRelationships: Record<string, string[]> = {
+        // When skills content is added, invalidate entries that only used experience
+        // (These might be preference questions that were misclassified)
+        'skills': ['experience'],
+
+        // When experience is added, invalidate entries that only used skills
+        // (These might be behavioral questions that were misclassified)
+        'experience': ['skills'],
+
+        // Projects can relate to both experience and skills
+        'projects': ['experience', 'skills'],
+
+        // Communication style can relate to any category
+        'communication': ['experience', 'projects', 'skills']
+      }
+
+      const relatedCategories = categoryRelationships[newCategory]
+      if (!relatedCategories || relatedCategories.length === 0) {
+        return 0
+      }
+
+      let totalDeleted = 0
+
+      // For each related category, find entries that ONLY used that category
+      // (indicating they might have missed the new category's content)
+      for (const relatedCategory of relatedCategories) {
+        const { data: deletedEntries, error } = await supabaseAdmin
+          .from('response_cache')
+          .delete()
+          .contains('categories_used', [relatedCategory])
+          .not('categories_used', 'cs', `{${relatedCategory},${newCategory}}`) // Don't delete if already multi-category
+          .select('id')
+
+        if (error) {
+          console.error(`Failed to invalidate ${relatedCategory}-only entries:`, error.message)
+          continue
+        }
+
+        totalDeleted += deletedEntries?.length || 0
+      }
+
+      if (totalDeleted > 0) {
+        console.log(`Invalidated ${totalDeleted} related cache entries for new ${newCategory} content`)
+      }
+
+      return totalDeleted
+
+    } catch (error) {
+      console.error('Error invalidating related categories:', error)
+      return 0
+    }
+  }
+
   // Clear all cache
   async clearAll(): Promise<number> {
     try {

@@ -218,17 +218,26 @@ export async function POST(request: NextRequest) {
     // Invalidate relevant cache entries
     try {
       const cacheInvalidations = []
-      
+
       // Invalidate by category
       const categoryInvalidated = await responseCacheService.invalidateByCategory(category)
       cacheInvalidations.push(`category:${category} (${categoryInvalidated} entries)`)
-      
+
       // Invalidate by tags if any
       if (validatedTags.length > 0) {
         const tagsInvalidated = await responseCacheService.invalidateByTags(validatedTags)
         cacheInvalidations.push(`tags:${validatedTags.join(',')} (${tagsInvalidated} entries)`)
       }
-      
+
+      // FUTURE-PROOF: For skills category, also invalidate experience-only entries
+      // These are cached responses that should have included skills but didn't (classification miss)
+      if (category === 'skills') {
+        const relatedInvalidated = await responseCacheService.invalidateRelatedCategories(category)
+        if (relatedInvalidated > 0) {
+          cacheInvalidations.push(`related-to-${category} (${relatedInvalidated} entries)`)
+        }
+      }
+
       console.log(`Cache invalidated: ${cacheInvalidations.join(', ')}`)
     } catch (cacheError) {
       console.error('Error invalidating cache:', cacheError)

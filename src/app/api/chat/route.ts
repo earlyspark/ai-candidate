@@ -6,6 +6,7 @@ import { responseCacheService } from '@/lib/response-cache'
 import { responseAuthenticityService } from '@/lib/response-authenticity-service'
 import SearchConfigService from '@/lib/search-config'
 import { applyRateLimit, getClientIP, RATE_LIMIT_CONFIGS } from '@/lib/rate-limiter'
+import { buildCandidateSystemMessages, LOWERCASE_I_RULE } from '@/lib/prompts/candidate-prompt'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -98,10 +99,6 @@ OTHER RULES:
 Answer: YES or NO`
 
   try {
-    console.log('\n=== VALIDATION CHECK ===')
-    console.log('Query:', query)
-    console.log('Top chunks preview:', topChunksWithTags.substring(0, 300))
-
     const response = await openaiService.generateChatCompletion([
       { role: 'user', content: validationPrompt }
     ], {
@@ -111,10 +108,6 @@ Answer: YES or NO`
     })
 
     const canAnswer = response.content?.toLowerCase().includes('yes') || false
-    console.log('Validation response:', response.content)
-    console.log('Can answer:', canAnswer)
-    console.log('======================\n')
-
     return canAnswer
 
   } catch (error) {
@@ -130,6 +123,9 @@ async function generateOffTopicResponse(
 ): Promise<string> {
   const offTopicPrompt = `You are an AI assistant representing a professional candidate in job interviews.
 
+CRITICAL FORMATTING RULE:
+${LOWERCASE_I_RULE}
+
 CONVERSATION HISTORY:
 ${conversationHistory}
 
@@ -141,7 +137,6 @@ GUIDELINES:
 - Be polite and natural, not robotic
 - Acknowledge the question briefly
 - Gently redirect to your professional background
-- Use lowercase "i" (not "I")
 - Keep it conversational and brief (1-2 sentences)
 - Vary your response - don't use the same phrasing every time
 
@@ -222,8 +217,6 @@ export async function POST(request: NextRequest) {
     const cacheResult = await responseCacheService.checkCache(message, contextHash)
     
     if (cacheResult.hit) {
-      console.log(`Cache hit for query: "${message.substring(0, 50)}..."`)
-      
       // Add user message to conversation
       const userMessage = {
         role: 'user' as const,
@@ -289,19 +282,26 @@ export async function POST(request: NextRequest) {
         tokenCount: 0
       }
     }
-    
-    // Perform RAG search
-    console.log(`Performing RAG search for: "${message.substring(0, 50)}..."`)
 
+    // Perform RAG search
     const searchResponse = await searchService.search(message, {
       limit: 5,
       threshold: thresholds.minimum_threshold, // Use pre-loaded threshold config
       includeMetadata: true
     })
 
-    // Prepare context for AI response
+    // Prepare context for AI response with year tags (if present)
     const retrievedContent = searchResponse.results
-      .map(result => `[${result.chunk.category.toUpperCase()}] ${result.chunk.content}`)
+      .map(result => {
+        const category = result.chunk.category.toUpperCase()
+        const tags = result.chunk.metadata?.tags as string[] | undefined
+
+        // Extract year tags (4-digit years like "2024", "2019")
+        const yearTags = tags?.filter(tag => /^\d{4}$/.test(tag)) || []
+        const yearTag = yearTags.length > 0 ? `[${yearTags.join(',')}]` : ''
+
+        return `[${category}]${yearTag} ${result.chunk.content}`
+      })
       .join('\n\n')
 
     // Build conversation history for context
@@ -442,84 +442,14 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Create AI prompt with rich authenticity context
-    const systemPrompt = `You are an AI assistant representing a professional candidate in conversations with recruiters and hiring managers.
-
-SEARCH ANALYSIS - Use this to calibrate your confidence and authenticity:
-- Confidence Level: ${searchAnalysis.confidenceLevel} (similarity: ${Math.round(searchAnalysis.confidenceScore * 100)}%)
-- Found ${searchAnalysis.resultCount} relevant results from categories: ${searchAnalysis.categories.join(', ')}
-- Has current/recent information: ${searchAnalysis.hasRecentExperience ? 'Yes' : 'No'}
-${searchAnalysis.experienceAge ? `- Experience age: ${searchAnalysis.experienceAge} years` : ''}
-${searchAnalysis.gaps.length > 0 ? `- Information gaps: ${searchAnalysis.gaps.join(', ')}` : ''}
-
-TEMPORAL CONTEXT GUIDELINES - Use experience age to determine appropriate tense:
-- Experience age 5+ years: Use past tense
-- Experience age 3-5 years: Use past tense with temporal context
-- Experience age 1-2 years: Can use recent past tense
-- Only use present tense for current/recent information (hasRecentExperience: Yes)
-- For hobbies/interests: Clearly distinguish between current and past interests
-
-CRITICAL - AMBIGUOUS DATE HANDLING:
-- When NO dates are provided or dates are ambiguous: ALWAYS use past tense
-- Default assumption: undated activities are from the past, not current
-- Example: "i enjoyed volunteering" not "i enjoy volunteering" for undated activities
-- Only use present tense when explicitly marked as current or recent
-
-PERSONA GUIDELINES:
-You are representing this specific candidate based on their actual data. Respond naturally in first person as the candidate.
-
-CRITICAL - CONTENT USAGE RULES:
-- ONLY use information from the RETRIEVED CONTEXT below
-- NEVER invent, assume, or make up personal details, experiences, hobbies, or facts not in the context
-- If content is tagged with a topic (visible in metadata), the candidate wants you to use it for that topic
-- Trust the candidate's curation - tagged content is intentionally selected for specific questions
-- Synthesize and present information naturally without robotic hedging phrases
-
-RESPONSE STYLE:
-- Speak naturally and conversationally as the candidate would
-- Avoid meta-commentary like "I don't have specific information" or "I'd need to think about that"
-- If you truly have no relevant information, be brief and authentic, not formulaic
-- Adapt tone to the question - direct for facts, thoughtful for values/interests
-
-ANSWER STRATEGY:
-- Be selective with retrieved information - choose the most relevant and compelling details, not everything found
-- When discussing accomplishments or strengths, highlight what makes the candidate stand out
-
-PROFESSIONAL DISCRETION:
-When asked about compensation, salary, or financial details - even if you have some work context - recognize these require deeper human discussion. Suggest connecting on LinkedIn to discuss further with the full URL: https://www.linkedin.com/in/rayanastanek/
-
-${shouldRedirectToLinkedIn ? `MISSING INFORMATION HANDLING:
-The retrieved context doesn't contain enough information to answer this question thoroughly.
-Acknowledge this naturally and suggest connecting on LinkedIn for a deeper conversation.
-Keep it conversational - no robotic templates.
-CRITICAL: Always include the full LinkedIn URL: https://www.linkedin.com/in/rayanastanek/` : `RESPONSE GUIDELINES:
-You have sufficient information to answer this question. Respond naturally based on the retrieved context without mentioning LinkedIn.`}
-
-CRITICAL FORMATTING RULES - FOLLOW EXACTLY:
-1. NEVER wrap your entire response in quotation marks
-2. Do NOT start your response with a quote and end with a quote
-3. Write naturally without surrounding quotes
-4. Only use quotes when quoting someone else's specific words
-5. Always use lowercase "i" when referring to yourself (never "I")
-
-COMMUNICATION STYLE (INFP-T personality):
-- Casual but thoughtful tone
-- Use "..." when processing complex thoughts
-- Be direct but diplomatic
-- Provide clear, direct responses with relevant context when helpful
-- Write as if speaking directly to the recruiter, not as quoted text
-
-IMPORTANT - INTERVIEW DYNAMICS:
-- You are being interviewed, not conducting an interview
-- Answer the recruiter's questions directly
-- Do not ask questions back unless the query is genuinely unclear
-- Focus on providing information rather than seeking clarification
-
-RETRIEVED CONTEXT:
-${retrievedContent}
-
-CONVERSATION HISTORY:
-${conversationHistory}`
+    const now = new Date()
+    const systemMessages = buildCandidateSystemMessages({
+      searchAnalysis,
+      retrievedContent,
+      conversationHistory,
+      shouldRedirectToLinkedIn,
+      now
+    })
 
     // Handle streaming vs non-streaming responses
     if (stream) {
@@ -527,7 +457,7 @@ ${conversationHistory}`
       return handleStreamingResponse({
         message,
         sessionId,
-        systemPrompt,
+        systemMessages,
         searchResponse,
         contextWithUserMessage,
         contextHash,
@@ -537,10 +467,7 @@ ${conversationHistory}`
     } else {
       // Non-streaming response (existing logic)
       const aiResponse = await openaiService.generateChatCompletion([
-        {
-          role: 'system',
-          content: systemPrompt
-        },
+        ...systemMessages,
         {
           role: 'user',
           content: message
@@ -635,7 +562,7 @@ ${conversationHistory}`
 async function handleStreamingResponse({
   message,
   sessionId,
-  systemPrompt,
+  systemMessages,
   searchResponse,
   contextWithUserMessage,
   contextHash,
@@ -644,7 +571,7 @@ async function handleStreamingResponse({
 }: {
   message: string
   sessionId: string
-  systemPrompt: string
+  systemMessages: Array<{ role: 'system'; content: string }>
   searchResponse: any
   contextWithUserMessage: any
   contextHash: string
@@ -677,10 +604,7 @@ async function handleStreamingResponse({
 
         // Start streaming AI response
         const streamIterable = await openaiService.generateStreamingChatCompletion([
-          {
-            role: 'system',
-            content: systemPrompt
-          },
+          ...systemMessages,
           {
             role: 'user',
             content: message
