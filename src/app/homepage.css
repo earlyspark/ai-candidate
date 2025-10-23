@@ -9,27 +9,6 @@
   background: #000;
 }
 
-/* Animated gradient background */
-.gradient-bg {
-  position: absolute;
-  inset: 0;
-  background: radial-gradient(
-    ellipse at center,
-    rgba(20, 10, 40, 0.4) 0%,
-    rgba(0, 0, 0, 1) 70%
-  );
-  animation: pulseGradient 8s ease-in-out infinite;
-}
-
-@keyframes pulseGradient {
-  0%, 100% {
-    opacity: 0.3;
-  }
-  50% {
-    opacity: 0.6;
-  }
-}
-
 /* Diamond wrapper with parallax */
 .diamond-wrapper {
   position: relative;

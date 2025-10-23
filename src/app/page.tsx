@@ -23,9 +23,6 @@ export default function Home() {
 
   return (
     <div className="homepage-container">
-      {/* Animated gradient background */}
-      <div className="gradient-bg" />
-
       {/* Main diamond with effects */}
       <div
         className={`diamond-wrapper ${mounted ? 'visible' : ''}`}
