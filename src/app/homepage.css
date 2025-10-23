@@ -1,0 +1,229 @@
+/* Homepage container */
+.homepage-container {
+  position: relative;
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  background: #000;
+}
+
+/* Animated gradient background */
+.gradient-bg {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    ellipse at center,
+    rgba(20, 10, 40, 0.4) 0%,
+    rgba(0, 0, 0, 1) 70%
+  );
+  animation: pulseGradient 8s ease-in-out infinite;
+}
+
+@keyframes pulseGradient {
+  0%, 100% {
+    opacity: 0.3;
+  }
+  50% {
+    opacity: 0.6;
+  }
+}
+
+/* Diamond wrapper with parallax */
+.diamond-wrapper {
+  position: relative;
+  opacity: 0;
+  transition: transform 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94),
+              opacity 1.5s ease-out;
+  animation: float 6s ease-in-out infinite;
+}
+
+.diamond-wrapper.visible {
+  opacity: 1;
+}
+
+/* Floating animation */
+@keyframes float {
+  0%, 100% {
+    transform: translateY(0px) scale(1);
+  }
+  50% {
+    transform: translateY(-20px) scale(1.02);
+  }
+}
+
+/* Main diamond image */
+.diamond-image {
+  position: relative;
+  max-width: 90vw;
+  max-height: 90vh;
+  height: auto;
+  width: auto;
+  display: block;
+  filter: drop-shadow(0 0 40px rgba(255, 255, 255, 0.3));
+  z-index: 2;
+  animation: subtleGlow 4s ease-in-out infinite;
+}
+
+@keyframes subtleGlow {
+  0%, 100% {
+    filter: drop-shadow(0 0 40px rgba(255, 255, 255, 0.3))
+            drop-shadow(0 0 20px rgba(200, 200, 255, 0.2));
+  }
+  50% {
+    filter: drop-shadow(0 0 60px rgba(255, 255, 255, 0.5))
+            drop-shadow(0 0 30px rgba(200, 200, 255, 0.4));
+  }
+}
+
+/* Glow layers */
+.glow {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.glow-1 {
+  width: 60vw;
+  height: 60vw;
+  max-width: 800px;
+  max-height: 800px;
+  background: radial-gradient(
+    circle,
+    rgba(100, 150, 255, 0.15) 0%,
+    transparent 70%
+  );
+  animation: rotateGlow 20s linear infinite, pulseGlow1 3s ease-in-out infinite;
+}
+
+.glow-2 {
+  width: 50vw;
+  height: 50vw;
+  max-width: 600px;
+  max-height: 600px;
+  background: radial-gradient(
+    circle,
+    rgba(200, 100, 255, 0.1) 0%,
+    transparent 70%
+  );
+  animation: rotateGlow 15s linear infinite reverse, pulseGlow2 4s ease-in-out infinite;
+}
+
+.glow-3 {
+  width: 70vw;
+  height: 70vw;
+  max-width: 900px;
+  max-height: 900px;
+  background: radial-gradient(
+    circle,
+    rgba(255, 200, 100, 0.08) 0%,
+    transparent 70%
+  );
+  animation: rotateGlow 25s linear infinite, pulseGlow3 5s ease-in-out infinite;
+}
+
+@keyframes rotateGlow {
+  from {
+    transform: translate(-50%, -50%) rotate(0deg);
+  }
+  to {
+    transform: translate(-50%, -50%) rotate(360deg);
+  }
+}
+
+@keyframes pulseGlow1 {
+  0%, 100% {
+    opacity: 0.5;
+    transform: translate(-50%, -50%) scale(1);
+  }
+  50% {
+    opacity: 0.8;
+    transform: translate(-50%, -50%) scale(1.1);
+  }
+}
+
+@keyframes pulseGlow2 {
+  0%, 100% {
+    opacity: 0.4;
+    transform: translate(-50%, -50%) scale(1);
+  }
+  50% {
+    opacity: 0.7;
+    transform: translate(-50%, -50%) scale(1.15);
+  }
+}
+
+@keyframes pulseGlow3 {
+  0%, 100% {
+    opacity: 0.3;
+    transform: translate(-50%, -50%) scale(1);
+  }
+  50% {
+    opacity: 0.6;
+    transform: translate(-50%, -50%) scale(1.05);
+  }
+}
+
+/* Sparkle effects */
+.sparkle {
+  position: absolute;
+  width: 4px;
+  height: 4px;
+  background: white;
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 3;
+  box-shadow: 0 0 10px rgba(255, 255, 255, 0.8),
+              0 0 20px rgba(255, 255, 255, 0.4);
+}
+
+.sparkle-1 {
+  top: 20%;
+  left: 30%;
+  animation: sparkle 3s ease-in-out infinite;
+}
+
+.sparkle-2 {
+  top: 70%;
+  right: 25%;
+  animation: sparkle 4s ease-in-out infinite 0.5s;
+}
+
+.sparkle-3 {
+  top: 40%;
+  right: 20%;
+  animation: sparkle 3.5s ease-in-out infinite 1s;
+}
+
+.sparkle-4 {
+  bottom: 30%;
+  left: 25%;
+  animation: sparkle 4.5s ease-in-out infinite 1.5s;
+}
+
+@keyframes sparkle {
+  0%, 100% {
+    opacity: 0;
+    transform: scale(0);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .diamond-wrapper {
+    animation: float 8s ease-in-out infinite;
+  }
+
+  .sparkle {
+    display: none; /* Hide sparkles on mobile for cleaner look */
+  }
+}

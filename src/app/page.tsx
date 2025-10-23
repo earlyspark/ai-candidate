@@ -1,19 +1,56 @@
+'use client';
+
+import { useEffect, useState } from 'react';
+import './homepage.css';
+
 export default function Home() {
+  const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+
+    const handleMouseMove = (e: MouseEvent) => {
+      // Calculate position relative to center, normalized to -1 to 1
+      const x = (e.clientX / window.innerWidth - 0.5) * 2;
+      const y = (e.clientY / window.innerHeight - 0.5) * 2;
+      setMousePosition({ x, y });
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    return () => window.removeEventListener('mousemove', handleMouseMove);
+  }, []);
+
   return (
-    <div
-      style={{
-        minHeight: '100vh',
-        background: '#000',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-      }}
-    >
-      <img
-        src="/20250914_diamond.png"
-        alt="Diamond"
-        style={{ maxWidth: '90vw', maxHeight: '90vh', height: 'auto', width: 'auto' }}
-      />
+    <div className="homepage-container">
+      {/* Animated gradient background */}
+      <div className="gradient-bg" />
+
+      {/* Main diamond with effects */}
+      <div
+        className={`diamond-wrapper ${mounted ? 'visible' : ''}`}
+        style={{
+          transform: `translate(${mousePosition.x * 20}px, ${mousePosition.y * 20}px)`,
+        }}
+      >
+        {/* Glow layers */}
+        <div className="glow glow-1" />
+        <div className="glow glow-2" />
+        <div className="glow glow-3" />
+
+        {/* Main diamond image */}
+        <img
+          src="/20250914_diamond.png"
+          alt="Diamond"
+          className="diamond-image"
+        />
+
+        {/* Sparkle effects */}
+        <div className="sparkle sparkle-1" />
+        <div className="sparkle sparkle-2" />
+        <div className="sparkle sparkle-3" />
+        <div className="sparkle sparkle-4" />
+      </div>
     </div>
   );
 }
