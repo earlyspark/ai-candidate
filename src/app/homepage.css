@@ -7,6 +7,58 @@
   justify-content: center;
   overflow: hidden;
   background: #000;
+  cursor: none; /* Hide default cursor for custom effect */
+}
+
+/* Custom cursor trail dots */
+.trail-dot {
+  position: fixed;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.8) 0%, rgba(255, 255, 255, 0) 70%);
+  pointer-events: none;
+  z-index: 9999;
+  transform: translate(-50%, -50%);
+  animation: trailFade 0.8s ease-out forwards;
+}
+
+@keyframes trailFade {
+  0% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.3);
+  }
+}
+
+/* Click ripple effect */
+.ripple {
+  position: fixed;
+  width: 20px;
+  height: 20px;
+  border: 2px solid rgba(255, 255, 255, 0.6);
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 9998;
+  transform: translate(-50%, -50%);
+  animation: rippleExpand 1s ease-out forwards;
+}
+
+@keyframes rippleExpand {
+  0% {
+    width: 20px;
+    height: 20px;
+    opacity: 1;
+  }
+  100% {
+    width: 200px;
+    height: 200px;
+    opacity: 0;
+    border-width: 1px;
+  }
 }
 
 /* Diamond wrapper with parallax */
@@ -106,11 +158,20 @@
 
 /* Responsive adjustments */
 @media (max-width: 768px) {
+  .homepage-container {
+    cursor: default; /* Restore cursor on mobile */
+  }
+
   .diamond-wrapper {
     animation: float 8s ease-in-out infinite;
   }
 
   .sparkle {
     display: none; /* Hide sparkles on mobile for cleaner look */
+  }
+
+  .trail-dot,
+  .ripple {
+    display: none; /* Hide mouse effects on mobile */
   }
 }
