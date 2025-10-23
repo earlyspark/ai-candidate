@@ -30,11 +30,6 @@ export default function Home() {
           transform: `translate(${mousePosition.x * 20}px, ${mousePosition.y * 20}px)`,
         }}
       >
-        {/* Glow layers */}
-        <div className="glow glow-1" />
-        <div className="glow glow-2" />
-        <div className="glow glow-3" />
-
         {/* Main diamond image */}
         <img
           src="/20250914_diamond.png"
