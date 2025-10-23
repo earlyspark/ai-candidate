@@ -92,20 +92,7 @@
   height: auto;
   width: auto;
   display: block;
-  filter: drop-shadow(0 0 40px rgba(255, 255, 255, 0.3));
   z-index: 2;
-  animation: subtleGlow 4s ease-in-out infinite;
-}
-
-@keyframes subtleGlow {
-  0%, 100% {
-    filter: drop-shadow(0 0 40px rgba(255, 255, 255, 0.3))
-            drop-shadow(0 0 20px rgba(200, 200, 255, 0.2));
-  }
-  50% {
-    filter: drop-shadow(0 0 60px rgba(255, 255, 255, 0.5))
-            drop-shadow(0 0 30px rgba(200, 200, 255, 0.4));
-  }
 }
 
 /* Sparkle effects */
