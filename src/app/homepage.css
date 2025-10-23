@@ -1,0 +1,164 @@
+/* Homepage container */
+.homepage-container {
+  position: relative;
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  background: #000;
+  cursor: none; /* Hide default cursor for custom effect */
+}
+
+/* Custom cursor trail dots */
+.trail-dot {
+  position: fixed;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.8) 0%, rgba(255, 255, 255, 0) 70%);
+  pointer-events: none;
+  z-index: 9999;
+  transform: translate(-50%, -50%);
+  animation: trailFade 0.8s ease-out forwards;
+}
+
+@keyframes trailFade {
+  0% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.3);
+  }
+}
+
+/* Click ripple effect */
+.ripple {
+  position: fixed;
+  width: 20px;
+  height: 20px;
+  border: 2px solid rgba(255, 255, 255, 0.6);
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 9998;
+  transform: translate(-50%, -50%);
+  animation: rippleExpand 1s ease-out forwards;
+}
+
+@keyframes rippleExpand {
+  0% {
+    width: 20px;
+    height: 20px;
+    opacity: 1;
+  }
+  100% {
+    width: 200px;
+    height: 200px;
+    opacity: 0;
+    border-width: 1px;
+  }
+}
+
+/* Diamond wrapper with parallax */
+.diamond-wrapper {
+  position: relative;
+  opacity: 0;
+  transition: transform 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94),
+              opacity 1.5s ease-out;
+  animation: float 6s ease-in-out infinite;
+}
+
+.diamond-wrapper.visible {
+  opacity: 1;
+}
+
+/* Floating animation */
+@keyframes float {
+  0%, 100% {
+    transform: translateY(0px) scale(1);
+  }
+  50% {
+    transform: translateY(-20px) scale(1.02);
+  }
+}
+
+/* Main diamond image */
+.diamond-image {
+  position: relative;
+  max-width: 90vw;
+  max-height: 90vh;
+  height: auto;
+  width: auto;
+  display: block;
+  z-index: 2;
+}
+
+/* Sparkle effects */
+.sparkle {
+  position: absolute;
+  width: 4px;
+  height: 4px;
+  background: white;
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 3;
+  box-shadow: 0 0 10px rgba(255, 255, 255, 0.8),
+              0 0 20px rgba(255, 255, 255, 0.4);
+}
+
+.sparkle-1 {
+  top: 20%;
+  left: 30%;
+  animation: sparkle 3s ease-in-out infinite;
+}
+
+.sparkle-2 {
+  top: 70%;
+  right: 25%;
+  animation: sparkle 4s ease-in-out infinite 0.5s;
+}
+
+.sparkle-3 {
+  top: 40%;
+  right: 20%;
+  animation: sparkle 3.5s ease-in-out infinite 1s;
+}
+
+.sparkle-4 {
+  bottom: 30%;
+  left: 25%;
+  animation: sparkle 4.5s ease-in-out infinite 1.5s;
+}
+
+@keyframes sparkle {
+  0%, 100% {
+    opacity: 0;
+    transform: scale(0);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .homepage-container {
+    cursor: default; /* Restore cursor on mobile */
+  }
+
+  .diamond-wrapper {
+    animation: float 8s ease-in-out infinite;
+  }
+
+  .sparkle {
+    display: none; /* Hide sparkles on mobile for cleaner look */
+  }
+
+  .trail-dot,
+  .ripple {
+    display: none; /* Hide mouse effects on mobile */
+  }
+}
