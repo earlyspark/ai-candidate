@@ -568,7 +568,7 @@ export class CrossReferenceService {
   // Diversity balancing to prevent result clustering and ensure balanced mix
   private static calculateDiversityPenalty(
     ref: CrossReferenceResult,
-    context: CrossReferenceContext
+    _context: CrossReferenceContext
   ): number {
     // This is a simplified implementation - in practice, you'd track previously selected results
     // For now, we slightly penalize hierarchical relationships to encourage category diversity

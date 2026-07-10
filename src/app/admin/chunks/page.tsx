@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 
 interface KnowledgeChunk {
@@ -50,7 +50,7 @@ export default function KnowledgeChunksPage() {
   const [expandedChunk, setExpandedChunk] = useState<number | null>(null)
 
   // All functions defined here
-  const loadChunks = async (offset: number = 0, category: string = '') => {
+  const loadChunks = useCallback(async (offset: number = 0, category: string = '') => {
     setLoading(true)
     setError(null)
 
@@ -80,7 +80,7 @@ export default function KnowledgeChunksPage() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [pagination.limit])
 
   const handleCategoryChange = (category: string) => {
     setSelectedCategory(category)

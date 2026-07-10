@@ -88,8 +88,6 @@ export class ExperienceChunker extends BaseChunker {
       const matches = Array.from(content.matchAll(pattern))
       
       if (matches.length > 1) { // Multiple matches suggest structured content
-        const lastIndex = 0
-        
         for (let i = 0; i < matches.length; i++) {
           const match = matches[i]
           const nextMatch = matches[i + 1]
@@ -277,8 +275,7 @@ export class ExperienceChunker extends BaseChunker {
     ]
     
     let lastIndex = 0
-    const currentComponents: string[] = []
-    
+
     for (let i = 0; i < starMarkers.length; i++) {
       const marker = starMarkers[i]
       const match = content.slice(lastIndex).match(marker.pattern)

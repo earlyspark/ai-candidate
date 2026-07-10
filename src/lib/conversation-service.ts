@@ -287,7 +287,7 @@ export class ConversationService {
   }
 
   // Compress context by summarizing older messages
-  private compressContext(messages: Message[], targetTokens: number): Message[] {
+  private compressContext(messages: Message[], _targetTokens: number): Message[] {
     if (messages.length <= 10) return messages
 
     // Keep the last 10 messages full, summarize the rest
@@ -350,8 +350,7 @@ export class ConversationService {
 
   // Extract entities from user message
   private extractEntities(content: string, currentEntities: ConversationContext['entities']): ConversationContext['entities'] {
-    const lowercaseContent = content.toLowerCase()
-    
+
     // Technology patterns
     const techPatterns = /\b(react|vue|angular|javascript|typescript|python|java|node|express|sql|aws|docker|kubernetes|git|mongodb|postgresql)\b/gi
     const technologies = [...new Set([

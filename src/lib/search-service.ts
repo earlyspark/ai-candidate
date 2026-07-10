@@ -387,7 +387,7 @@ Respond in JSON format:
 
         const parsed = JSON.parse(cleanContent)
         if (parsed.weights && Array.isArray(parsed.weights)) {
-          return parsed.weights.map((w: any) => ({
+          return parsed.weights.map((w: { category: string; weight?: number; reason?: string }) => ({
             category: w.category,
             weight: Math.max(0, Math.min(1, w.weight || 0)),
             reason: w.reason || 'LLM classification'

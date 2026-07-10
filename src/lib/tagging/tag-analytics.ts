@@ -426,7 +426,7 @@ Tags:`
   }
 
   // Provide starter suggestions when no existing tags are available
-  private getStarterSuggestions(category: string, contentLower: string): TagSuggestion[] {
+  private getStarterSuggestions(category: string, _contentLower: string): TagSuggestion[] {
     const suggestions: TagSuggestion[] = []
 
     // Category-specific starter tags

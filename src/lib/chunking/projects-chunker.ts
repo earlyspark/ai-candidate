@@ -92,8 +92,6 @@ export class ProjectsChunker extends BaseChunker {
       const matches = Array.from(content.matchAll(pattern))
       
       if (matches.length > 1) {
-        const lastIndex = 0
-        
         for (let i = 0; i < matches.length; i++) {
           const match = matches[i]
           const nextMatch = matches[i + 1]
@@ -174,8 +172,7 @@ export class ProjectsChunker extends BaseChunker {
   
   private extractTechStack(content: string): string[] {
     const techStack = new Set<string>()
-    const contentLower = content.toLowerCase()
-    
+
     // Common technology patterns
     const techPatterns = {
       // Frontend

@@ -49,7 +49,7 @@ export async function POST(request: NextRequest) {
 }
 
 // Get search statistics
-export async function GET(request: NextRequest) {
+export async function GET(_request: NextRequest) {
   try {
     // Check authentication
     const session = await getServerSession(authOptions)

@@ -185,13 +185,26 @@ export function getClientIP(request: Request): string {
   return 'unknown-ip'
 }
 
+export interface RateLimitError {
+  success: false
+  error: string
+  code: string
+  retryAfter?: number
+}
+
+export interface RateLimitResult {
+  allowed: boolean
+  headers: Record<string, string>
+  error?: RateLimitError
+}
+
 /**
  * Middleware function to apply rate limiting to API routes
  */
 export function applyRateLimit(
   identifier: string,
   config: RateLimitConfig
-): { allowed: boolean; headers: Record<string, string>; error?: any } {
+): RateLimitResult {
   // Bypass rate limiting in development environment
   if (process.env.NODE_ENV !== 'production') {
     return {

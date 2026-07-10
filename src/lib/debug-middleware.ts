@@ -29,7 +29,7 @@ export function checkDebugAccess(): NextResponse | null {
  * Wrapper function for debug route handlers
  * Automatically applies security checks before executing the handler
  */
-export function withDebugAuth<T extends any[]>(
+export function withDebugAuth<T extends unknown[]>(
   handler: (...args: T) => Promise<NextResponse>
 ): (...args: T) => Promise<NextResponse> {
   return async (...args: T): Promise<NextResponse> => {

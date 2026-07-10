@@ -192,7 +192,6 @@ export abstract class BaseChunker {
     sequenceOrder: number
   ): Promise<Chunk> {
     const firstChild = childChunks[childIndices[0]];
-    const lastChild = childChunks[childIndices[childIndices.length - 1]];
 
     // Combine semantic boundaries from children
     const semanticBoundaries = this.combineSemanticBoundaries(
@@ -228,7 +227,11 @@ export abstract class BaseChunker {
     endContext?: string;
     temporalMarkers?: string[];
   }> {
-    const boundaries: any = {};
+    const boundaries: {
+      startContext?: string;
+      endContext?: string;
+      temporalMarkers?: string[];
+    } = {};
 
     // Extract temporal markers
     boundaries.temporalMarkers = await this.extractTemporalMarkers(content);
@@ -363,7 +366,7 @@ export abstract class BaseChunker {
   }
 
   // Create semantic overlap that preserves context
-  private createSemanticOverlap(currentChunk: string, nextSentence: string): string {
+  private createSemanticOverlap(currentChunk: string, _nextSentence: string): string {
     const sentences = this.splitIntoSentences(currentChunk);
 
     // Look for sentences with temporal markers or connecting words

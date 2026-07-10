@@ -103,7 +103,9 @@ export default function Home() {
           transform: `translate(${mousePosition.x * 20}px, ${mousePosition.y * 20}px)`,
         }}
       >
-        {/* Main diamond image */}
+        {/* Main diamond image - plain img is intentional: next/image optimization
+            would add Vercel usage costs and re-encode the carefully tuned PNG */}
+        {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src="/20250914_diamond.png"
           alt="Diamond"

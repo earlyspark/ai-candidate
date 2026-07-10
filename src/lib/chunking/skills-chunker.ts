@@ -332,8 +332,6 @@ export class SkillsChunker extends BaseChunker {
       const matches = Array.from(content.matchAll(pattern))
       
       if (matches.length > 2) { // Need multiple subgroups
-        const lastIndex = 0
-        
         for (let i = 0; i < matches.length; i++) {
           const match = matches[i]
           const nextMatch = matches[i + 1]

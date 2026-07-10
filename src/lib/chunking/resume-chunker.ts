@@ -240,7 +240,7 @@ export class ResumeChunker extends BaseChunker {
   }
 
   // Determine if a header is a true organizational section vs. a job entry
-  private isTrueSectionHeader(title: string, content: string): boolean {
+  private isTrueSectionHeader(title: string, _content: string): boolean {
     const titleLower = title.toLowerCase()
 
     // Common true section headers
