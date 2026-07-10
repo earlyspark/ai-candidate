@@ -1,0 +1,285 @@
+import { supabaseAdmin } from './supabase-admin'
+import { chunkingService, ContentCategory } from './chunking'
+import { taggingService } from './tagging'
+import { embeddingService } from './embedding-service'
+import { responseCacheService } from './response-cache'
+import { HierarchicalChunkService } from './hierarchical-chunk-service'
+import { invalidateKnowledgeBaseCache } from './prompts/full-context-prompt'
+
+/**
+ * Shared content-processing pipeline: validate → tag → version → chunk →
+ * embed → invalidate caches. Used by the authenticated admin content route
+ * and the bearer-authenticated /api/ingest endpoint so both entry points
+ * process content identically.
+ */
+
+export const VALID_CATEGORIES: ContentCategory[] = ['resume', 'experience', 'projects', 'communication', 'skills']
+
+export interface IngestRequest {
+  category: string
+  content: string
+  tags?: unknown
+  editingId?: unknown
+}
+
+export interface IngestOutcome {
+  status: number
+  body: Record<string, unknown>
+}
+
+export async function processAndStoreContent({ category, content, tags, editingId }: IngestRequest): Promise<IngestOutcome> {
+  // Validate input
+  if (!category || !content) {
+    return { status: 400, body: { message: 'Category and content are required' } }
+  }
+
+  // Validate category
+  if (!VALID_CATEGORIES.includes(category as ContentCategory)) {
+    return { status: 400, body: { message: 'Invalid category' } }
+  }
+
+  // Validate content using chunking service
+  const contentValidation = chunkingService.validateContent(category as ContentCategory, content)
+  if (!contentValidation.isValid) {
+    return {
+      status: 400,
+      body: {
+        message: 'Content validation failed',
+        errors: contentValidation.errors,
+        warnings: contentValidation.warnings
+      }
+    }
+  }
+
+  // Process and validate tags
+  const processedTags = tags && Array.isArray(tags) ? tags.filter(tag => typeof tag === 'string' && tag.trim().length > 0) : []
+  let validatedTags: string[] = []
+
+  if (processedTags.length > 0) {
+    const tagValidation = await taggingService.processTags(processedTags.join(', '), category)
+    validatedTags = tagValidation.normalizedTags
+  }
+
+  // Handle versioning logic - ONLY when editing existing content
+  let newVersion = 1
+  let oldVersionId: number | null = null
+
+  // Convert editingId to number if it's a string, handle null/undefined
+  const parsedEditingId = editingId ? (typeof editingId === 'string' ? parseInt(editingId, 10) : Number(editingId)) : null
+
+  if (parsedEditingId) {
+    // Editing specific content - this is a version update
+    const { data: existingContent, error: fetchError } = await supabaseAdmin
+      .from('knowledge_versions')
+      .select('id, version')
+      .eq('id', parsedEditingId)
+      .single()
+
+    if (fetchError) {
+      console.error('Error fetching content to edit:', fetchError)
+      return { status: 404, body: { message: 'Content to edit not found' } }
+    }
+
+    // Calculate next version number for this specific content
+    newVersion = existingContent.version + 1
+    oldVersionId = existingContent.id
+  }
+
+  // Save new version FIRST, then retire the old one. If this insert fails the
+  // old version stays active and searchable - nothing is lost. (The reverse
+  // order could deactivate the old version, delete its chunks, and then fail
+  // the insert, leaving no active content at all.)
+  const { data: versionData, error: versionError } = await supabaseAdmin
+    .from('knowledge_versions')
+    .insert({
+      category,
+      content,
+      tags: validatedTags,
+      version: newVersion,
+      active: true
+    })
+    .select()
+    .single()
+
+  if (versionError) {
+    console.error('Error saving version:', versionError)
+    return { status: 500, body: { message: 'Error saving content version' } }
+  }
+
+  if (oldVersionId) {
+    // Deactivate ONLY this specific old version
+    const { error: deactivateError } = await supabaseAdmin
+      .from('knowledge_versions')
+      .update({ active: false })
+      .eq('id', oldVersionId)
+
+    if (deactivateError) {
+      console.error('Error deactivating old version:', deactivateError)
+      // Compensate: remove the just-inserted version so search doesn't return
+      // two active versions of the same content
+      await supabaseAdmin
+        .from('knowledge_versions')
+        .delete()
+        .eq('id', versionData.id)
+      return { status: 500, body: { message: 'Error deactivating old version - edit was rolled back' } }
+    }
+
+    // Delete chunks associated with the old version
+    const { error: deleteChunksError } = await supabaseAdmin
+      .from('knowledge_chunks')
+      .delete()
+      .eq('metadata->>sourceId', String(oldVersionId))
+
+    if (deleteChunksError) {
+      console.error(`Error deleting chunks for old version:`, deleteChunksError)
+    }
+
+    console.log(`Deactivated version ID:${oldVersionId} and created version ${newVersion}`)
+  }
+
+  // Process content through chunking system
+  let chunkingResult
+  const hasStyleSource = validatedTags.includes('communication-style-source')
+
+  try {
+    if (hasStyleSource && category !== 'communication') {
+      // Use cross-category processing for dual-purpose content
+      chunkingResult = await chunkingService.processCrossCategoryContent(
+        category as ContentCategory,
+        content,
+        validatedTags,
+        versionData.id
+      )
+    } else {
+      // Standard category-specific processing
+      chunkingResult = await chunkingService.processContent(
+        category as ContentCategory,
+        content,
+        validatedTags,
+        versionData.id
+      )
+    }
+  } catch (chunkingError) {
+    console.error('Error processing content chunks:', chunkingError)
+    // Don't fail if chunking fails - we still have the raw content saved
+    return {
+      status: 200,
+      body: {
+        message: 'Content saved but chunking failed. Raw content is preserved.',
+        versionId: versionData.id,
+        warnings: ['Content chunking failed - will need to be reprocessed']
+      }
+    }
+  }
+
+  // Store hierarchical chunks in database
+  let embeddingResults = null
+  let hierarchicalStorageResult = null
+
+  if (chunkingResult.chunks.length > 0) {
+    // Use hierarchical chunk service for storage
+    hierarchicalStorageResult = await HierarchicalChunkService.storeHierarchicalChunks(
+      chunkingResult.chunks,
+      versionData.id
+    )
+
+    if (!hierarchicalStorageResult.success) {
+      console.error('Error storing hierarchical chunks:', hierarchicalStorageResult.error)
+      return {
+        status: 500,
+        body: {
+          message: 'Failed to store hierarchical chunks',
+          error: hierarchicalStorageResult.error
+        }
+      }
+    }
+
+    // Generate embeddings for new chunks after hierarchical storage
+    if (hierarchicalStorageResult.storedChunks > 0) {
+      try {
+        // Get all stored chunks for this group to generate embeddings
+        const { data: storedChunks, error: fetchError } = await supabaseAdmin
+          .from('knowledge_chunks')
+          .select('id')
+          .eq('chunk_group_id', hierarchicalStorageResult.groupId)
+
+        if (!fetchError && storedChunks) {
+          const embeddingPromises = storedChunks.map(chunk =>
+            embeddingService.generateChunkEmbedding(chunk.id)
+          )
+          embeddingResults = await Promise.all(embeddingPromises)
+
+          console.log(`Generated embeddings for ${embeddingResults.filter(r => r.success).length}/${embeddingResults.length} hierarchical chunks`)
+        }
+      } catch (embeddingError) {
+        console.error('Error generating embeddings for hierarchical chunks:', embeddingError)
+        // Don't fail the request - chunks are stored, embeddings can be generated later
+      }
+    }
+  }
+
+  // Refresh the v2 full-context prompt cache so new content is visible immediately
+  invalidateKnowledgeBaseCache()
+
+  // Invalidate relevant cache entries
+  try {
+    const cacheInvalidations = []
+
+    // Invalidate by category
+    const categoryInvalidated = await responseCacheService.invalidateByCategory(category)
+    cacheInvalidations.push(`category:${category} (${categoryInvalidated} entries)`)
+
+    // Invalidate by tags if any
+    if (validatedTags.length > 0) {
+      const tagsInvalidated = await responseCacheService.invalidateByTags(validatedTags)
+      cacheInvalidations.push(`tags:${validatedTags.join(',')} (${tagsInvalidated} entries)`)
+    }
+
+    // FUTURE-PROOF: For skills category, also invalidate experience-only entries
+    // These are cached responses that should have included skills but didn't (classification miss)
+    if (category === 'skills') {
+      const relatedInvalidated = await responseCacheService.invalidateRelatedCategories(category)
+      if (relatedInvalidated > 0) {
+        cacheInvalidations.push(`related-to-${category} (${relatedInvalidated} entries)`)
+      }
+    }
+
+    console.log(`Cache invalidated: ${cacheInvalidations.join(', ')}`)
+  } catch (cacheError) {
+    console.error('Error invalidating cache:', cacheError)
+    // Don't fail the request for cache errors
+  }
+
+  return {
+    status: 200,
+    body: {
+      message: 'Content processed successfully with hierarchical chunking',
+      versionId: versionData.id,
+      version: versionData.version,
+      isUpdate: parsedEditingId !== null && parsedEditingId !== undefined,
+      processing: {
+        totalChunks: chunkingResult.totalChunks,
+        processingTime: chunkingResult.processingTime,
+        hasDualPurpose: chunkingResult.hasDualPurpose,
+        categoryStats: chunkingResult.categoryStats
+      },
+      hierarchicalStorage: hierarchicalStorageResult ? {
+        storedChunks: hierarchicalStorageResult.storedChunks,
+        groupId: hierarchicalStorageResult.groupId,
+        hierarchicalEnabled: true
+      } : null,
+      embeddings: embeddingResults ? {
+        generated: embeddingResults.filter(r => r.success).length,
+        failed: embeddingResults.filter(r => !r.success).length,
+        totalCost: embeddingResults.reduce((sum, r) => sum + r.cost, 0)
+      } : null,
+      validation: {
+        warnings: contentValidation.warnings
+      },
+      versioning: parsedEditingId ? {
+        oldVersionId: oldVersionId,
+        newVersion: versionData.version
+      } : null
+    }
+  }
+}
