@@ -1,22 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { timingSafeEqual } from 'crypto'
 import { supabase } from '@/lib/supabase'
+import { checkCronAuth } from '@/lib/cron-auth'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
-
-/**
- * Compare two secrets without leaking length or content through timing.
- * timingSafeEqual throws on length mismatch, so that case is handled first.
- */
-function secretsMatch(provided: string, expected: string): boolean {
-  const a = Buffer.from(provided)
-  const b = Buffer.from(expected)
-  if (a.length !== b.length) {
-    return false
-  }
-  return timingSafeEqual(a, b)
-}
 
 /**
  * Keep-alive endpoint invoked by Vercel Cron.
@@ -25,27 +12,11 @@ function secretsMatch(provided: string, expected: string): boolean {
  * database activity, and a project left paused for ninety days can no longer be
  * restored from the dashboard. A single trivial read per day resets that
  * inactivity timer.
- *
- * Vercel attaches `Authorization: Bearer $CRON_SECRET` to cron invocations when
- * the CRON_SECRET environment variable is present. Without that check this
- * route is a public, unauthenticated database call.
  */
 export async function GET(request: NextRequest) {
-  const cronSecret = process.env.CRON_SECRET
-  if (!cronSecret) {
-    console.error('Keep-alive rejected: CRON_SECRET is not configured')
-    return NextResponse.json(
-      { success: false, error: 'Endpoint is not configured' },
-      { status: 503 }
-    )
-  }
-
-  const authHeader = request.headers.get('authorization')
-  if (!authHeader || !secretsMatch(authHeader, `Bearer ${cronSecret}`)) {
-    return NextResponse.json(
-      { success: false, error: 'Unauthorized' },
-      { status: 401 }
-    )
+  const authError = checkCronAuth(request)
+  if (authError) {
+    return authError
   }
 
   try {

@@ -448,11 +448,13 @@ export class ConversationService {
     }
   }
 
-  // Clean up old conversations (older than 24 hours)
-  async cleanupOldConversations(): Promise<number> {
+  // Clean up conversations older than the retention window.
+  // Note: the admin analytics dashboard reads the conversations table, so the
+  // retention period also bounds how much analytics history is available.
+  async cleanupOldConversations(retentionDays: number = 90): Promise<number> {
     try {
       const cutoffDate = new Date()
-      cutoffDate.setHours(cutoffDate.getHours() - 24)
+      cutoffDate.setDate(cutoffDate.getDate() - retentionDays)
 
       const { data: deleted, error } = await supabase
         .from('conversations')
