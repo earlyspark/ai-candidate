@@ -198,6 +198,7 @@ export class OpenAIService {
       temperature?: number
       maxTokens?: number
       topP?: number
+      signal?: AbortSignal
     }
   ): Promise<AsyncIterable<string>> {
     try {
@@ -208,6 +209,9 @@ export class OpenAIService {
         max_tokens: options?.maxTokens || 1000,
         top_p: options?.topP ?? 1.0,
         stream: true
+      }, {
+        // Abort token generation when the caller (e.g. a disconnected client) cancels
+        signal: options?.signal
       })
 
       return this.processStream(stream)

@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { openaiService } from '@/lib/openai'
-import { searchService, type SearchResult } from '@/lib/search-service'
+import { searchService, type SearchResult, type SearchResponse } from '@/lib/search-service'
 import { conversationService } from '@/lib/conversation-service'
 import { responseCacheService } from '@/lib/response-cache'
 import { responseAuthenticityService } from '@/lib/response-authenticity-service'
 import SearchConfigService from '@/lib/search-config'
-import { applyRateLimit, getClientIP, RATE_LIMIT_CONFIGS } from '@/lib/rate-limiter'
+import { applyRateLimit, getClientIP, RATE_LIMIT_CONFIGS, type RateLimitResult } from '@/lib/rate-limiter'
 import { buildCandidateSystemMessages, LOWERCASE_I_RULE } from '@/lib/prompts/candidate-prompt'
 
 export const runtime = 'nodejs'
@@ -406,8 +406,9 @@ export async function POST(request: NextRequest) {
               })
               controller.enqueue(encoder.encode(`data: ${metadata}\n\n`))
 
-              for (const char of offTopicContent) {
-                const chunk = JSON.stringify({ type: 'token', content: char })
+              // Send word-sized chunks rather than one SSE event per character
+              for (const word of offTopicContent.match(/\S+\s*/g) || [offTopicContent]) {
+                const chunk = JSON.stringify({ type: 'token', content: word })
                 controller.enqueue(encoder.encode(`data: ${chunk}\n\n`))
               }
 
@@ -453,6 +454,13 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Only cache high/moderate confidence responses. Cached entries are shared
+    // across sessions (fresh sessions share the empty-history context hash), so
+    // caching low-confidence answers lets one visitor's oddly-phrased query
+    // shape the response served to later visitors with similar queries.
+    const shouldCacheResponse = !shouldRedirectToLinkedIn &&
+      (searchAnalysis.confidenceLevel === 'high' || searchAnalysis.confidenceLevel === 'moderate')
+
     const now = new Date()
     const systemMessages = buildCandidateSystemMessages({
       searchAnalysis,
@@ -470,10 +478,10 @@ export async function POST(request: NextRequest) {
         sessionId,
         systemMessages,
         searchResponse,
-        contextWithUserMessage,
         contextHash,
         rateLimitResult,
-        shouldRedirectToLinkedIn
+        shouldCacheResponse,
+        abortSignal: request.signal
       })
     } else {
       // Non-streaming response (existing logic)
@@ -506,8 +514,8 @@ export async function POST(request: NextRequest) {
           return { tokenCount: 0, messages: [], sessionId, entities: [], currentTopic: '', lastActivity: new Date() }
         }),
         // Cache the response in background - don't wait for it
-        // Skip caching for LinkedIn redirects (generic responses, unlikely to benefit from cache)
-        !shouldRedirectToLinkedIn ? (async () => {
+        // Skipped for LinkedIn redirects and low-confidence responses (see shouldCacheResponse)
+        shouldCacheResponse ? (async () => {
           try {
             const queryEmbedding = await openaiService.generateEmbedding(message)
             await responseCacheService.storeResponse(
@@ -575,19 +583,19 @@ async function handleStreamingResponse({
   sessionId,
   systemMessages,
   searchResponse,
-  contextWithUserMessage,
   contextHash,
   rateLimitResult,
-  shouldRedirectToLinkedIn
+  shouldCacheResponse,
+  abortSignal
 }: {
   message: string
   sessionId: string
   systemMessages: Array<{ role: 'system'; content: string }>
-  searchResponse: any
-  contextWithUserMessage: any
+  searchResponse: SearchResponse
   contextHash: string
-  rateLimitResult: any
-  shouldRedirectToLinkedIn: boolean
+  rateLimitResult: RateLimitResult
+  shouldCacheResponse: boolean
+  abortSignal: AbortSignal
 }) {
   const encoder = new TextEncoder()
 
@@ -602,7 +610,7 @@ async function handleStreamingResponse({
             categories: searchResponse.categoryWeights,
             processingTime: searchResponse.searchTime
           },
-          sources: searchResponse.results.map((r: any) => ({
+          sources: searchResponse.results.map((r: SearchResult) => ({
             id: r.chunk.id,
             category: r.chunk.category,
             similarity: r.similarity,
@@ -613,7 +621,8 @@ async function handleStreamingResponse({
         })
         controller.enqueue(encoder.encode(`data: ${metadata}\n\n`))
 
-        // Start streaming AI response
+        // Start streaming AI response. The client's abort signal is forwarded so
+        // token generation stops (and stops billing) when the visitor disconnects.
         const streamIterable = await openaiService.generateStreamingChatCompletion([
           ...systemMessages,
           {
@@ -623,7 +632,8 @@ async function handleStreamingResponse({
         ], {
           model: 'gpt-4o-mini',
           temperature: 0.7,
-          maxTokens: 500
+          maxTokens: 500,
+          signal: abortSignal
         })
 
         let fullResponse = ''
@@ -645,13 +655,13 @@ async function handleStreamingResponse({
         }
 
         // Update context and cache in background
-        // Skip caching for LinkedIn redirects (generic responses, unlikely to benefit from cache)
+        // Caching skipped for LinkedIn redirects and low-confidence responses (see shouldCacheResponse)
         Promise.all([
           conversationService.addMessage(sessionId, assistantMessage).catch(err => {
             console.error('Failed to save streaming response to conversation:', err)
             return { tokenCount: 0, messages: [], sessionId, entities: [], currentTopic: '', lastActivity: new Date() }
           }),
-          !shouldRedirectToLinkedIn ? (async () => {
+          shouldCacheResponse ? (async () => {
             try {
               const queryEmbedding = await openaiService.generateEmbedding(message)
               await responseCacheService.storeResponse(
@@ -683,6 +693,12 @@ async function handleStreamingResponse({
         })
 
       } catch (error) {
+        // Client disconnected mid-stream: nothing to send, just stop quietly
+        if (abortSignal.aborted) {
+          try { controller.close() } catch { /* already closed */ }
+          return
+        }
+
         console.error('Streaming error:', error)
         const errorData = JSON.stringify({
           type: 'error',
