@@ -14,7 +14,9 @@ export async function GET(request: NextRequest) {
   const secret = url.searchParams.get('secret')
   const required = process.env.DEV_REPAIR_SECRET
 
-  if (required && secret !== required) {
+  // Fail closed: without a configured secret this endpoint is unreachable,
+  // rather than open to anyone
+  if (!required || secret !== required) {
     return NextResponse.json({ message: 'Unauthorized' }, { status: 401 })
   }
 

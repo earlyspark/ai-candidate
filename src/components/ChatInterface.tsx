@@ -83,6 +83,22 @@ export default function ChatInterface({ sessionId, onContextUpdate }: ChatInterf
     }
   }
 
+  // Build a user-friendly error message from a failed API response
+  const errorFromResponse = async (response: Response): Promise<Error> => {
+    let message = 'Failed to get response. Please try again.'
+    try {
+      const data = await response.json()
+      if (response.status === 429) {
+        message = data.retryAfter
+          ? `Too many messages — please try again in ${data.retryAfter} seconds.`
+          : 'Too many messages — please slow down and try again shortly.'
+      } else if (data.message || data.error) {
+        message = data.message || data.error
+      }
+    } catch { /* keep the default message */ }
+    return new Error(message)
+  }
+
   // Handle non-streaming message (original logic)
   const handleNonStreamingMessage = async (userMessage: Message) => {
     try {
@@ -97,6 +113,10 @@ export default function ChatInterface({ sessionId, onContextUpdate }: ChatInterf
           stream: false
         }),
       })
+
+      if (!response.ok) {
+        throw await errorFromResponse(response)
+      }
 
       const data = await response.json()
 
@@ -153,7 +173,7 @@ export default function ChatInterface({ sessionId, onContextUpdate }: ChatInterf
       })
 
       if (!response.ok) {
-        throw new Error('Failed to start streaming response')
+        throw await errorFromResponse(response)
       }
 
       // Create assistant message placeholder
@@ -236,7 +256,7 @@ export default function ChatInterface({ sessionId, onContextUpdate }: ChatInterf
   }
 
   // Handle Enter key press
-  const handleKeyPress = (e: React.KeyboardEvent) => {
+  const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
       handleSendMessage()
@@ -308,9 +328,9 @@ export default function ChatInterface({ sessionId, onContextUpdate }: ChatInterf
       <div className="flex-shrink-0 border-b border-gray-800 p-4">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-xl font-semibold text-white">Hi, I'm @earlyspark</h1>
+            <h1 className="text-xl font-semibold text-white">Hi, I&apos;m @earlyspark</h1>
             <p className="text-sm text-gray-400">
-              I'm an AI chatbot that answers questions on RayAna's professional background.{' '}
+              I&apos;m an AI chatbot that answers questions on RayAna&apos;s professional background.{' '}
               <a
                 href="https://www.linkedin.com/posts/rayanastanek_vibecoding-futureofwork-activity-7382683633628856320-Bp17"
                 target="_blank"
@@ -491,7 +511,7 @@ export default function ChatInterface({ sessionId, onContextUpdate }: ChatInterf
               ref={inputRef}
               value={inputValue}
               onChange={(e) => setInputValue(e.target.value)}
-              onKeyPress={handleKeyPress}
+              onKeyDown={handleKeyDown}
               placeholder="Ask me about my experience, skills, or background..."
               maxLength={2000}
               className="w-full bg-gray-900 border border-gray-700 rounded-xl px-4 py-3 pr-12 text-white placeholder-gray-500 resize-none focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all custom-scrollbar"
