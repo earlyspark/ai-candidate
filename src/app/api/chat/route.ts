@@ -203,16 +203,16 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // ARCHITECTURE FLAG - route to the experimental single-prompt (v2) handler.
-    // The request-body override is for evaluation only: honored outside
-    // production unless explicitly enabled, so anonymous visitors cannot force
-    // the full-corpus path. Production switches via the CHAT_ARCHITECTURE env var.
+    // ARCHITECTURE FLAG - single-prompt (v2) is the default architecture;
+    // set CHAT_ARCHITECTURE=v1 to fall back to the RAG pipeline. The
+    // request-body override is for evaluation only: honored outside production
+    // unless explicitly enabled, so anonymous visitors cannot switch paths.
     const overrideAllowed = process.env.NODE_ENV !== 'production' ||
       process.env.CHAT_ARCH_OVERRIDE_ENABLED === 'true'
     const requestedArchitecture = architecture === 'v1' || architecture === 'v2' ? architecture : undefined
     const resolvedArchitecture = (overrideAllowed && requestedArchitecture)
       ? requestedArchitecture
-      : (process.env.CHAT_ARCHITECTURE === 'v2' ? 'v2' : 'v1')
+      : (process.env.CHAT_ARCHITECTURE === 'v1' ? 'v1' : 'v2')
 
     if (resolvedArchitecture === 'v2') {
       return handleV2ChatRequest({
