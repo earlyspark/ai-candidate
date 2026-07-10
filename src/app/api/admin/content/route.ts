@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
-import { authOptions } from '../../auth/[...nextauth]/route'
+import { authOptions } from '@/lib/auth'
 import { supabaseAdmin } from '@/lib/supabase-admin'
 import { chunkingService, ContentCategory } from '@/lib/chunking'
 import { taggingService } from '@/lib/tagging'
