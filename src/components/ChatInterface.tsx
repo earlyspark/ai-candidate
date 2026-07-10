@@ -493,6 +493,7 @@ export default function ChatInterface({ sessionId, onContextUpdate }: ChatInterf
               onChange={(e) => setInputValue(e.target.value)}
               onKeyPress={handleKeyPress}
               placeholder="Ask me about my experience, skills, or background..."
+              maxLength={2000}
               className="w-full bg-gray-900 border border-gray-700 rounded-xl px-4 py-3 pr-12 text-white placeholder-gray-500 resize-none focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all custom-scrollbar"
               rows={1}
               style={{

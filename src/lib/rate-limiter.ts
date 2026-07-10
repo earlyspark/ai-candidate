@@ -192,7 +192,7 @@ export function applyRateLimit(
   identifier: string,
   config: RateLimitConfig
 ): { allowed: boolean; headers: Record<string, string>; error?: any } {
-3  // Bypass rate limiting in development environment
+  // Bypass rate limiting in development environment
   if (process.env.NODE_ENV !== 'production') {
     return {
       allowed: true,

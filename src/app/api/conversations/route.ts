@@ -1,15 +1,30 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { conversationService } from '@/lib/conversation-service'
+import { applyRateLimit, getClientIP, RATE_LIMIT_CONFIGS } from '@/lib/rate-limiter'
 
 // Create new conversation session
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { action, sessionId, message } = body
+    const { action, sessionId } = body
 
-    // Get client IP address for session tracking
+    // Get client IP address for session tracking and rate limiting
+    const clientIP = getClientIP(request)
     const ipHeader = request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip')
     const ipAddress = ipHeader && ipHeader.trim().length > 0 ? ipHeader : null
+
+    // Session creation gets a stricter limit than other conversation actions
+    const rateLimitConfig = action === 'create-session'
+      ? RATE_LIMIT_CONFIGS.SESSION_CREATION
+      : RATE_LIMIT_CONFIGS.CHAT_API
+    const rateLimitResult = applyRateLimit(clientIP, rateLimitConfig)
+
+    if (!rateLimitResult.allowed) {
+      return NextResponse.json(rateLimitResult.error, {
+        status: 429,
+        headers: rateLimitResult.headers
+      })
+    }
 
     switch (action) {
       case 'create-session':
@@ -17,20 +32,8 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({
           success: true,
           sessionId: newSessionId
-        })
-
-      case 'add-message':
-        if (!sessionId || !message) {
-          return NextResponse.json(
-            { success: false, message: 'Session ID and message are required' },
-            { status: 400 }
-          )
-        }
-
-        const updatedContext = await conversationService.addMessage(sessionId, message)
-        return NextResponse.json({
-          success: true,
-          context: updatedContext
+        }, {
+          headers: rateLimitResult.headers
         })
 
       case 'clear-context':
@@ -45,6 +48,8 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({
           success: true,
           message: 'Context cleared successfully'
+        }, {
+          headers: rateLimitResult.headers
         })
 
       default:
@@ -57,10 +62,10 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error('Error in conversation API:', error)
     return NextResponse.json(
-      { 
-        success: false, 
+      {
+        success: false,
         message: 'Internal server error',
-        error: error instanceof Error ? error.message : String(error) 
+        error: process.env.NODE_ENV === 'development' ? (error instanceof Error ? error.message : String(error)) : undefined
       },
       { status: 500 }
     )
@@ -70,6 +75,16 @@ export async function POST(request: NextRequest) {
 // Get conversation context
 export async function GET(request: NextRequest) {
   try {
+    const clientIP = getClientIP(request)
+    const rateLimitResult = applyRateLimit(clientIP, RATE_LIMIT_CONFIGS.CHAT_API)
+
+    if (!rateLimitResult.allowed) {
+      return NextResponse.json(rateLimitResult.error, {
+        status: 429,
+        headers: rateLimitResult.headers
+      })
+    }
+
     const { searchParams } = new URL(request.url)
     const sessionId = searchParams.get('sessionId')
 
@@ -81,7 +96,7 @@ export async function GET(request: NextRequest) {
     }
 
     const context = await conversationService.getContext(sessionId)
-    
+
     if (!context) {
       return NextResponse.json(
         { success: false, message: 'Session not found' },
@@ -96,15 +111,17 @@ export async function GET(request: NextRequest) {
       success: true,
       context,
       contextStatus
+    }, {
+      headers: rateLimitResult.headers
     })
 
   } catch (error) {
     console.error('Error getting conversation context:', error)
     return NextResponse.json(
-      { 
-        success: false, 
+      {
+        success: false,
         message: 'Internal server error',
-        error: error instanceof Error ? error.message : String(error) 
+        error: process.env.NODE_ENV === 'development' ? (error instanceof Error ? error.message : String(error)) : undefined
       },
       { status: 500 }
     )

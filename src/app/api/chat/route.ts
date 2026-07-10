@@ -11,6 +11,10 @@ import { buildCandidateSystemMessages, LOWERCASE_I_RULE } from '@/lib/prompts/ca
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
+// Cap message size: every message is embedded and passed through multiple LLM
+// calls, so unbounded input is a direct cost-abuse vector on a public endpoint.
+const MAX_MESSAGE_LENGTH = 2000
+
 // Helper: Check if query is relevant to candidate's professional background
 async function checkQueryRelevance(query: string): Promise<boolean> {
   const relevancePrompt = `Classify if a question relates to employment/career topics or job interviewing.
@@ -177,6 +181,13 @@ export async function POST(request: NextRequest) {
     if (!message || typeof message !== 'string' || message.trim().length === 0) {
       return NextResponse.json(
         { success: false, message: 'Message is required' },
+        { status: 400 }
+      )
+    }
+
+    if (message.length > MAX_MESSAGE_LENGTH) {
+      return NextResponse.json(
+        { success: false, message: `Message is too long (max ${MAX_MESSAGE_LENGTH} characters)` },
         { status: 400 }
       )
     }
