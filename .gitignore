@@ -56,3 +56,6 @@ CLAUDE.md
 
 # fastcomet static homepage files
 /fastcomet-homepage/
+
+# Claude Code local config and skills (personal skills live in ~/.claude/skills)
+/.claude/
