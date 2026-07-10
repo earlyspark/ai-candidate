@@ -88,35 +88,12 @@ export async function POST(request: NextRequest) {
       // Calculate next version number for this specific content
       newVersion = existingContent.version + 1
       oldVersionId = existingContent.id
-
-      // Deactivate ONLY this specific old version
-      const { error: deactivateError } = await supabaseAdmin
-        .from('knowledge_versions')
-        .update({ active: false })
-        .eq('id', oldVersionId)
-
-      if (deactivateError) {
-        console.error('Error deactivating old version:', deactivateError)
-        return NextResponse.json(
-          { message: 'Error deactivating old version' },
-          { status: 500 }
-        )
-      }
-
-      // Delete chunks associated with the old version
-      const { error: deleteChunksError } = await supabaseAdmin
-        .from('knowledge_chunks')
-        .delete()
-        .eq('metadata->>sourceId', String(oldVersionId))
-
-      if (deleteChunksError) {
-        console.error(`Error deleting chunks for old version:`, deleteChunksError)
-      }
-
-      console.log(`Deactivated version ID:${oldVersionId} and created version ${newVersion}`)
     }
 
-    // Save new version to knowledge_versions table
+    // Save new version FIRST, then retire the old one. If this insert fails the
+    // old version stays active and searchable - nothing is lost. (The reverse
+    // order could deactivate the old version, delete its chunks, and then fail
+    // the insert, leaving no active content at all.)
     const { data: versionData, error: versionError } = await supabaseAdmin
       .from('knowledge_versions')
       .insert({
@@ -135,6 +112,40 @@ export async function POST(request: NextRequest) {
         { message: 'Error saving content version' },
         { status: 500 }
       )
+    }
+
+    if (oldVersionId) {
+      // Deactivate ONLY this specific old version
+      const { error: deactivateError } = await supabaseAdmin
+        .from('knowledge_versions')
+        .update({ active: false })
+        .eq('id', oldVersionId)
+
+      if (deactivateError) {
+        console.error('Error deactivating old version:', deactivateError)
+        // Compensate: remove the just-inserted version so search doesn't return
+        // two active versions of the same content
+        await supabaseAdmin
+          .from('knowledge_versions')
+          .delete()
+          .eq('id', versionData.id)
+        return NextResponse.json(
+          { message: 'Error deactivating old version - edit was rolled back' },
+          { status: 500 }
+        )
+      }
+
+      // Delete chunks associated with the old version
+      const { error: deleteChunksError } = await supabaseAdmin
+        .from('knowledge_chunks')
+        .delete()
+        .eq('metadata->>sourceId', String(oldVersionId))
+
+      if (deleteChunksError) {
+        console.error(`Error deleting chunks for old version:`, deleteChunksError)
+      }
+
+      console.log(`Deactivated version ID:${oldVersionId} and created version ${newVersion}`)
     }
 
     // Process content through chunking system
