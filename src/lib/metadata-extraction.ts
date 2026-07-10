@@ -1,6 +1,6 @@
 // Universal LLM-powered metadata extraction service for any content domain
 
-import { openaiService } from './openai'
+import { openaiService, CHAT_MODEL } from './openai'
 
 export interface ExtractedMetadata {
   // Universal entities and classifications
@@ -72,7 +72,7 @@ export class MetadataExtractor {
           content: prompt
         }
       ], {
-        model: 'gpt-4o-mini',
+        model: CHAT_MODEL,
         temperature: 0.1,
         maxTokens: 1200
       })

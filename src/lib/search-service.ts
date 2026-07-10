@@ -1,4 +1,4 @@
-import { openaiService } from './openai'
+import { openaiService, CHAT_MODEL } from './openai'
 import { supabase } from './supabase'
 import type { KnowledgeChunk } from './supabase'
 import { HierarchicalChunkService, HierarchicalChunk } from './hierarchical-chunk-service'
@@ -49,6 +49,23 @@ type TemporalContext = {
   reference: string
   referenceYear?: number
 }
+
+// Static category descriptions used for query classification. These mirror the
+// authoritative guidance embedded in the classification prompt, so generating
+// them per-search with an LLM added cost without adding information.
+const CATEGORY_DESCRIPTIONS: Record<string, string> = {
+  resume: 'Employment history, company names, job titles, dates, education, work experience timeline, hobbies, interests, volunteering, personal activities',
+  experience: 'Work methodologies, processes, how-to guides, approaches, lessons learned, behavioral examples',
+  projects: 'Specific project details, accomplishments, case studies, technical implementations',
+  communication: 'Writing samples, posts, speaking engagements, communication style examples',
+  skills: 'Technical abilities, expertise areas, proficiencies, work preferences'
+}
+
+// In-memory cache for category discovery (per-lambda instance, same tradeoff
+// as SearchConfigService). Categories only change when admin content is saved.
+let discoveredCategoriesCache: Array<{category: string, description: string, sampleContent: string}> | null = null
+let discoveredCategoriesCacheExpiry = 0
+const DISCOVERY_CACHE_TTL_MS = 5 * 60 * 1000
 
 export class SearchService {
   
@@ -254,8 +271,16 @@ export class SearchService {
     }
   }
 
-  // Dynamically discover what categories actually exist in the knowledge base
+  // Dynamically discover what categories actually exist in the knowledge base.
+  // Descriptions come from the static map below (the classification prompt already
+  // carries authoritative category guidance) and results are cached in memory,
+  // eliminating the per-search LLM description calls this method used to make.
   private async discoverAvailableCategories(): Promise<Array<{category: string, description: string, sampleContent: string}>> {
+    const now = Date.now()
+    if (discoveredCategoriesCache && now < discoveredCategoriesCacheExpiry) {
+      return discoveredCategoriesCache
+    }
+
     try {
       const { data: categoryStats, error } = await supabase
         .from('knowledge_chunks')
@@ -272,7 +297,7 @@ export class SearchService {
         return []
       }
 
-      // Group by category and create descriptions
+      // Group by category and attach static descriptions
       const categoryGroups = categoryStats.reduce((acc, chunk) => {
         if (!acc[chunk.category]) {
           acc[chunk.category] = []
@@ -281,49 +306,22 @@ export class SearchService {
         return acc
       }, {} as Record<string, string[]>)
 
-      // Create intelligent descriptions for each category
-      const categories = await Promise.all(
-        Object.entries(categoryGroups).map(async ([category, contents]) => {
-          const sampleContent = contents.slice(0, 3).join('\n').substring(0, 500)
-          const description = await this.generateCategoryDescription(category, sampleContent)
+      const categories = Object.entries(categoryGroups).map(([category, contents]) => {
+        const sampleContent = contents.slice(0, 3).join('\n').substring(0, 500)
 
-          return {
-            category,
-            description: description || `Content related to ${category}`,
-            sampleContent: sampleContent.substring(0, 200)
-          }
-        })
-      )
+        return {
+          category,
+          description: CATEGORY_DESCRIPTIONS[category] || `Content related to ${category}`,
+          sampleContent: sampleContent.substring(0, 200)
+        }
+      })
 
+      discoveredCategoriesCache = categories
+      discoveredCategoriesCacheExpiry = now + DISCOVERY_CACHE_TTL_MS
       return categories
     } catch (error) {
       console.error('Error in category discovery:', error)
       return []
-    }
-  }
-
-  // Use LLM to generate intelligent category descriptions
-  private async generateCategoryDescription(category: string, sampleContent: string): Promise<string | null> {
-    try {
-      const prompt = `Based on this sample content from the "${category}" category, write a brief 1-2 sentence description of what this category contains:
-
-Sample content:
-"${sampleContent.substring(0, 300)}..."
-
-Description:`
-
-      const response = await openaiService.generateChatCompletion([
-        { role: 'user', content: prompt }
-      ], {
-        model: 'gpt-4o-mini',
-        temperature: 0.3,
-        maxTokens: 100
-      })
-
-      return response.content?.trim() || null
-    } catch (error) {
-      console.error('Error generating category description:', error)
-      return null
     }
   }
 
@@ -369,7 +367,7 @@ Respond in JSON format:
       const response = await openaiService.generateChatCompletion([
         { role: 'user', content: prompt }
       ], {
-        model: 'gpt-4o-mini',
+        model: CHAT_MODEL,
         temperature: 0.2,
         maxTokens: 300
       })

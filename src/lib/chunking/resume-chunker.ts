@@ -1,7 +1,7 @@
 // Resume chunker - Structure-aware chunking for professional background with LLM intelligence
 
 import { BaseChunker, Chunk } from './base-chunker'
-import { openaiService } from '../openai'
+import { openaiService, CHAT_MODEL } from '../openai'
 
 export class ResumeChunker extends BaseChunker {
   constructor() {
@@ -329,7 +329,7 @@ Category:`
       const response = await openaiService.generateChatCompletion([
         { role: 'user', content: prompt }
       ], {
-        model: 'gpt-4o-mini',
+        model: CHAT_MODEL,
         temperature: 0.1,
         maxTokens: 10
       })
@@ -606,7 +606,7 @@ Answer:`
       const response = await openaiService.generateChatCompletion([
         { role: 'user', content: prompt }
       ], {
-        model: 'gpt-4o-mini',
+        model: CHAT_MODEL,
         temperature: 0.1,
         maxTokens: 5
       })

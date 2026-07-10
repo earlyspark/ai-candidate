@@ -10,6 +10,10 @@ export const openai = new OpenAI({
   apiKey: openaiApiKey
 })
 
+// Default chat model for all completion calls; override per-environment
+// without code changes via OPENAI_CHAT_MODEL
+export const CHAT_MODEL = process.env.OPENAI_CHAT_MODEL ?? 'gpt-4o-mini'
+
 // OpenAI service for embeddings and chat completions
 export class OpenAIService {
   private client: OpenAI
@@ -168,7 +172,7 @@ export class OpenAIService {
   ): Promise<{ content: string; usage?: { prompt_tokens: number; completion_tokens: number; total_tokens: number } }> {
     try {
       const response = await this.client.chat.completions.create({
-        model: options?.model || 'gpt-4o-mini',
+        model: options?.model || CHAT_MODEL,
         messages,
         temperature: options?.temperature ?? 0.7,
         max_tokens: options?.maxTokens || 1000,
@@ -203,7 +207,7 @@ export class OpenAIService {
   ): Promise<AsyncIterable<string>> {
     try {
       const stream = await this.client.chat.completions.create({
-        model: options?.model || 'gpt-4o-mini',
+        model: options?.model || CHAT_MODEL,
         messages,
         temperature: options?.temperature ?? 0.7,
         max_tokens: options?.maxTokens || 1000,

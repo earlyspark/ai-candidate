@@ -1,7 +1,7 @@
 // Tag analytics service for organic tagging system
 
 import { supabase } from '../supabase'
-import { openaiService } from '../openai'
+import { openaiService, CHAT_MODEL } from '../openai'
 import { createHash } from 'crypto'
 
 export interface TagUsageStats {
@@ -399,7 +399,7 @@ Tags:`
       const response = await openaiService.generateChatCompletion([
         { role: 'user', content: prompt }
       ], {
-        model: 'gpt-4o-mini',
+        model: CHAT_MODEL,
         temperature: 0.3,
         maxTokens: 100
       })
