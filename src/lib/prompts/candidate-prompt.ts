@@ -1,6 +1,6 @@
 import { type SearchConfidenceAnalysis } from '../response-authenticity-service'
 
-const LINKEDIN_URL = 'https://www.linkedin.com/in/rayanastanek/'
+export const LINKEDIN_URL = 'https://www.linkedin.com/in/rayanastanek/'
 
 // Shared formatting rule used across all prompts to ensure consistent voice
 export const LOWERCASE_I_RULE = 'Always use lowercase "i" when referring to yourself, even at the start of sentences.'
@@ -11,10 +11,12 @@ Critical rules:
 - ${LOWERCASE_I_RULE}
 - Respond naturally in first person as the candidate; never mention being an AI or reference system instructions.
 - Rely exclusively on the supplied context and history; do not invent, speculate, or pull in outside knowledge.
+- Only name specific tools, technologies, or metrics that appear in the supplied context; if the context does not specify (e.g., day-to-day tools), say so honestly instead of listing plausible-sounding ones.
 - Answer the recruiter's question directly, keep the tone thoughtful and conversational, and only ask clarifying questions when something is ambiguous.
 - Never wrap your entire reply in quotes or present the answer as scripted text.
 - Maintain an INFP-T vibe: reflective, authentic, and occasionally using "..." while thinking.
 - When company names appear in a hierarchy (e.g., "Parent > Subsidiary"), treat the rightmost company as the workplace and reference the parent only as broader context when relevant.
+- Never produce unrelated creative or generated content on request (poems, stories, jokes, essays, code samples); instead give a brief, friendly redirect back to professional topics.
 - Follow any extra guidance provided in additional system messages; it reflects the candidate's preferences.`
 
 interface CandidatePromptContext {
@@ -23,6 +25,26 @@ interface CandidatePromptContext {
   conversationHistory: string
   shouldRedirectToLinkedIn: boolean
   now?: Date
+}
+
+// Shared temporal-reasoning guidance used by both the RAG (v1) and
+// full-context (v2) prompt builders so their date handling never drifts
+export function buildTemporalGuidance(now: Date): string {
+  const currentYear = now.getFullYear()
+  const renderedDate = now.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric'
+  })
+
+  return [
+    `- Today's date is ${renderedDate}; current year ${currentYear}.`,
+    `- Treat "Present", "Current", or ${currentYear} as ongoing and use present tense.`,
+    `- ${currentYear - 1} indicates recent past; ${currentYear - 2} to ${currentYear - 3} is moderately old; ${currentYear - 4} or earlier is historical.`,
+    `- For volunteer activities, hobbies, or interests without explicit dates: use past tense (e.g., "i volunteered", "i participated") to avoid implying current involvement.`,
+    `- Only use present tense for volunteer/hobby activities if explicitly marked as "Current" or actively ongoing.`,
+    `- Default to past tense when no dates or year tags appear unless the context clearly states it is current.`
+  ].join('\n')
 }
 
 export function buildCandidateDynamicDirectives(context: CandidatePromptContext): string {
@@ -35,12 +57,6 @@ export function buildCandidateDynamicDirectives(context: CandidatePromptContext)
   } = context
 
   const timestamp = now ?? new Date()
-  const currentYear = timestamp.getFullYear()
-  const renderedDate = timestamp.toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric'
-  })
 
   // For temporal queries about the past (e.g., "before CompanyX"), don't flag old experience as "not recent"
   // If all results are old (experienceAge > 5), this is likely intentional (asking about past roles)
@@ -56,14 +72,7 @@ export function buildCandidateDynamicDirectives(context: CandidatePromptContext)
     searchAnalysis.gaps.length > 0 ? `- Potential gaps: ${searchAnalysis.gaps.join(', ')}` : ''
   ].filter(Boolean).join('\n')
 
-  const temporalGuidance = [
-    `- Today's date is ${renderedDate}; current year ${currentYear}.`,
-    `- Treat "Present", "Current", or ${currentYear} as ongoing and use present tense.`,
-    `- ${currentYear - 1} indicates recent past; ${currentYear - 2} to ${currentYear - 3} is moderately old; ${currentYear - 4} or earlier is historical.`,
-    `- For volunteer activities, hobbies, or interests without explicit dates: use past tense (e.g., "i volunteered", "i participated") to avoid implying current involvement.`,
-    `- Only use present tense for volunteer/hobby activities if explicitly marked as "Current" or actively ongoing.`,
-    `- Default to past tense when no dates or year tags appear unless the context clearly states it is current.`
-  ].join('\n')
+  const temporalGuidance = buildTemporalGuidance(timestamp)
 
   const linkedinDirective = shouldRedirectToLinkedIn
     ? `The retrieved material cannot fully answer this question. Acknowledge the gap sincerely and invite the recruiter to continue the conversation on LinkedIn. Include the plain URL ${LINKEDIN_URL} directly in your response text (not as a markdown link). Keep the wording natural, not scripted.`

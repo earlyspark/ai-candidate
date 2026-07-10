@@ -7,6 +7,7 @@ import { taggingService } from '@/lib/tagging'
 import { embeddingService } from '@/lib/embedding-service'
 import { responseCacheService } from '@/lib/response-cache'
 import { HierarchicalChunkService } from '@/lib/hierarchical-chunk-service'
+import { invalidateKnowledgeBaseCache } from '@/lib/prompts/full-context-prompt'
 
 export async function POST(request: NextRequest) {
   try {
@@ -225,6 +226,9 @@ export async function POST(request: NextRequest) {
         }
       }
     }
+
+    // Refresh the v2 full-context prompt cache so new content is visible immediately
+    invalidateKnowledgeBaseCache()
 
     // Invalidate relevant cache entries
     try {

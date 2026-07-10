@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { openaiService } from '@/lib/openai'
+import { openaiService, CHAT_MODEL } from '@/lib/openai'
 import { searchService, type SearchResult, type SearchResponse } from '@/lib/search-service'
 import { conversationService } from '@/lib/conversation-service'
 import { responseCacheService } from '@/lib/response-cache'
@@ -7,6 +7,7 @@ import { responseAuthenticityService } from '@/lib/response-authenticity-service
 import SearchConfigService from '@/lib/search-config'
 import { applyRateLimit, getClientIP, RATE_LIMIT_CONFIGS, type RateLimitResult } from '@/lib/rate-limiter'
 import { buildCandidateSystemMessages, LOWERCASE_I_RULE } from '@/lib/prompts/candidate-prompt'
+import { handleV2ChatRequest } from '@/lib/chat-v2'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -15,59 +16,13 @@ export const dynamic = 'force-dynamic'
 // calls, so unbounded input is a direct cost-abuse vector on a public endpoint.
 const MAX_MESSAGE_LENGTH = 2000
 
-// Helper: Check if query is relevant to candidate's professional background
-async function checkQueryRelevance(query: string): Promise<boolean> {
-  const relevancePrompt = `Classify if a question relates to employment/career topics or job interviewing.
-
-QUESTION: "${query}"
-
-Does this question relate to employment, career, work, or job interviewing?
-
-RELEVANT questions include:
-- Work experience, skills, projects, achievements
-- Interview questions (strengths, weaknesses, work style, hobbies, interests)
-- Cultural fit questions (values, motivations, preferences)
-- Career goals, background, education
-- Personal questions commonly asked by recruiters
-
-IRRELEVANT questions include:
-- Unrelated topics (sports scores, weather, news)
-- Protected class information (ethnicity, race, age, religion, marital status, sexual orientation, disability status)
-- Inappropriate/illegal interview questions
-
-Answer with exactly one word: RELEVANT or IRRELEVANT`
-
-  try {
-    const response = await openaiService.generateChatCompletion([
-      { role: 'user', content: relevancePrompt }
-    ], {
-      model: 'gpt-4o-mini',
-      temperature: 0,
-      maxTokens: 10
-    })
-
-    const answer = response.content?.toUpperCase().trim() || ''
-    // Check for IRRELEVANT first (since "IRRELEVANT" contains "RELEVANT")
-    const isRelevant = !answer.includes('IRRELEVANT') && answer.includes('RELEVANT')
-
-    return isRelevant
-
-  } catch (error) {
-    console.error('Relevance check failed:', error)
-    // On error, assume relevant to avoid blocking legitimate queries
-    return true
-  }
-}
-
-// Helper: Validate if search results can answer the query
-async function validateSearchResults(
+// Helper: In one LLM call, assess whether retrieved content can answer the query
+// AND whether the query relates to employment/career topics. Replaces the former
+// sequential validateSearchResults + checkQueryRelevance calls.
+async function assessQueryAnswerability(
   query: string,
   searchResults: SearchResult[]
-): Promise<boolean> {
-  if (searchResults.length === 0) {
-    return false
-  }
-
+): Promise<{ canAnswer: boolean; isRelevant: boolean }> {
   // Include tags in the validation context
   const topChunksWithTags = searchResults
     .slice(0, 3)
@@ -79,44 +34,71 @@ async function validateSearchResults(
     .join('\n\n')
     .slice(0, 1500)
 
-  const validationPrompt = `You are evaluating retrieved information for an interview question.
+  const assessmentPrompt = `You are evaluating a question asked to a professional job candidate, along with information retrieved from their background.
 
 QUESTION: "${query}"
 
 RETRIEVED INFORMATION (with content tags):
-${topChunksWithTags}
+${topChunksWithTags || 'NO CONTENT RETRIEVED'}
 
-Can you provide a reasonable answer to the question using the information above?
+Evaluate two things independently:
 
+1. canAnswer - Can a reasonable answer be provided using ONLY the retrieved information above?
 CRITICAL RULE - TAG TRUST:
-- If content has a tag that matches the question topic (e.g., "hobbies" tag for "what are your hobbies"), answer YES
+- If content has a tag that matches the question topic (e.g., "hobbies" tag for "what are your hobbies"), canAnswer is true
 - Tags indicate the candidate explicitly wants to use this content for that topic
 - Even if content seems indirect, tags override - trust the candidate's curation
-
 OTHER RULES:
-- YES if information directly answers the question
-- YES if you can reasonably infer an answer from the context
-- YES if you can synthesize a reasonable answer from the context
+- true if information directly answers the question, or an answer can reasonably be inferred or synthesized from the context
 - Consider whether the specific information needed is actually present (not just related context)
-- NO if content is completely unrelated AND has no matching tags
+- false if content is completely unrelated AND has no matching tags
 
-Answer: YES or NO`
+2. isRelevant - Does the question relate to employment, career, work, or job interviewing?
+RELEVANT questions include:
+- Work experience, skills, projects, achievements
+- Interview questions (strengths, weaknesses, work style, hobbies, interests)
+- Cultural fit questions (values, motivations, preferences)
+- Career goals, background, education
+- Personal questions commonly asked by recruiters
+IRRELEVANT questions include:
+- Unrelated topics (sports scores, weather, news)
+- Requests to produce creative or generated content (poems, stories, jokes, essays, code)
+- Protected class information (ethnicity, race, age, religion, marital status, sexual orientation, disability status)
+- Inappropriate/illegal interview questions
+
+Respond with ONLY this JSON, no other text:
+{"canAnswer": true or false, "isRelevant": true or false}`
 
   try {
     const response = await openaiService.generateChatCompletion([
-      { role: 'user', content: validationPrompt }
+      { role: 'user', content: assessmentPrompt }
     ], {
-      model: 'gpt-4o-mini',
+      model: CHAT_MODEL,
       temperature: 0,
-      maxTokens: 5
+      maxTokens: 50
     })
 
-    const canAnswer = response.content?.toLowerCase().includes('yes') || false
-    return canAnswer
+    // Strip markdown code fences if present (same defense as search-service)
+    let cleanContent = (response.content || '').trim()
+    if (cleanContent.startsWith('```json')) {
+      cleanContent = cleanContent.replace(/^```json\s*/, '').replace(/\s*```$/, '')
+    } else if (cleanContent.startsWith('```')) {
+      cleanContent = cleanContent.replace(/^```\s*/, '').replace(/\s*```$/, '')
+    }
+
+    const parsed = JSON.parse(cleanContent)
+    return {
+      // Empty retrieval can never answer, regardless of LLM output
+      canAnswer: searchResults.length > 0 && parsed.canAnswer === true,
+      isRelevant: parsed.isRelevant === true
+    }
 
   } catch (error) {
-    console.error('Content validation failed:', error)
-    return false
+    console.error('Query answerability assessment failed:', error)
+    // Fail-safe defaults preserve the previous per-call error behavior:
+    // validation errors meant "can't answer", relevance errors meant "relevant"
+    // (so legitimate queries get a LinkedIn redirect rather than a decline)
+    return { canAnswer: false, isRelevant: true }
   }
 }
 
@@ -150,7 +132,7 @@ Generate your natural redirect response:`
     const response = await openaiService.generateChatCompletion([
       { role: 'user', content: offTopicPrompt }
     ], {
-      model: 'gpt-4o-mini',
+      model: CHAT_MODEL,
       temperature: 0.8,
       maxTokens: 100
     })
@@ -175,7 +157,7 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    const { message, sessionId, stream = false } = await request.json()
+    const { message, sessionId, stream = false, architecture, model } = await request.json()
 
     // Validate input
     if (!message || typeof message !== 'string' || message.trim().length === 0) {
@@ -219,6 +201,28 @@ export async function POST(request: NextRequest) {
         { success: false, message: 'Session not found. Please start a new conversation.' },
         { status: 404 }
       )
+    }
+
+    // ARCHITECTURE FLAG - route to the experimental single-prompt (v2) handler.
+    // The request-body override is for evaluation only: honored outside
+    // production unless explicitly enabled, so anonymous visitors cannot force
+    // the full-corpus path. Production switches via the CHAT_ARCHITECTURE env var.
+    const overrideAllowed = process.env.NODE_ENV !== 'production' ||
+      process.env.CHAT_ARCH_OVERRIDE_ENABLED === 'true'
+    const requestedArchitecture = architecture === 'v1' || architecture === 'v2' ? architecture : undefined
+    const resolvedArchitecture = (overrideAllowed && requestedArchitecture)
+      ? requestedArchitecture
+      : (process.env.CHAT_ARCHITECTURE === 'v2' ? 'v2' : 'v1')
+
+    if (resolvedArchitecture === 'v2') {
+      return handleV2ChatRequest({
+        message,
+        sessionId,
+        stream,
+        model: typeof model === 'string' ? model : undefined,
+        rateLimitResult,
+        abortSignal: request.signal
+      })
     }
 
     // Create context hash for caching
@@ -332,18 +336,16 @@ export async function POST(request: NextRequest) {
       maxSimilarity
     })
 
-    // CONTENT VALIDATION - for low/moderate confidence queries, validate if chunks can answer
+    // CONTENT VALIDATION - one combined LLM assessment for low/moderate/none
+    // confidence queries: can the chunks answer, and is the query even relevant?
     let shouldRedirectToLinkedIn = false
     let shouldDeclineOffTopic = false
 
     if (searchAnalysis.confidenceLevel === 'low' || searchAnalysis.confidenceLevel === 'moderate') {
-      const canAnswer = await validateSearchResults(message, searchResponse.results)
+      const assessment = await assessQueryAnswerability(message, searchResponse.results)
 
-      if (!canAnswer) {
-        // Check if query is even relevant to the candidate's background
-        const isRelevant = await checkQueryRelevance(message)
-
-        if (isRelevant) {
+      if (!assessment.canAnswer) {
+        if (assessment.isRelevant) {
           // Relevant but no answer → LinkedIn redirect
           shouldRedirectToLinkedIn = true
         } else {
@@ -352,10 +354,10 @@ export async function POST(request: NextRequest) {
         }
       }
     } else if (searchAnalysis.confidenceLevel === 'none') {
-      // Very low confidence - check relevance first
-      const isRelevant = await checkQueryRelevance(message)
+      // Very low confidence - never answer directly; route on relevance only
+      const assessment = await assessQueryAnswerability(message, searchResponse.results)
 
-      if (isRelevant) {
+      if (assessment.isRelevant) {
         shouldRedirectToLinkedIn = true
       } else {
         shouldDeclineOffTopic = true
@@ -492,7 +494,7 @@ export async function POST(request: NextRequest) {
           content: message
         }
       ], {
-        model: 'gpt-4o-mini',
+        model: CHAT_MODEL,
         temperature: 0.7,
         maxTokens: 500
       })
@@ -537,7 +539,7 @@ export async function POST(request: NextRequest) {
         success: true,
         response: aiResponse.content,
         cached: false,
-        model: 'gpt-4o-mini',
+        model: CHAT_MODEL,
         usage: aiResponse.usage || null,
         search: {
           resultsCount: searchResponse.results.length,
@@ -630,7 +632,7 @@ async function handleStreamingResponse({
             content: message
           }
         ], {
-          model: 'gpt-4o-mini',
+          model: CHAT_MODEL,
           temperature: 0.7,
           maxTokens: 500,
           signal: abortSignal

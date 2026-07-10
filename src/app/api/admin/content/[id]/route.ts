@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { supabase } from '@/lib/supabase'
 import { responseCacheService } from '@/lib/response-cache'
+import { invalidateKnowledgeBaseCache } from '@/lib/prompts/full-context-prompt'
 
 export async function DELETE(
   request: NextRequest,
@@ -41,6 +42,9 @@ export async function DELETE(
         { status: 500 }
       )
     }
+
+    // Refresh the v2 full-context prompt cache so deleted content disappears immediately
+    invalidateKnowledgeBaseCache()
 
     // Get chunk IDs before deleting (for cache invalidation)
     const { data: chunksToDelete, error: chunksFetchError } = await supabase
