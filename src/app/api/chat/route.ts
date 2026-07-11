@@ -625,7 +625,7 @@ async function handleStreamingResponse({
 
         // Start streaming AI response. The client's abort signal is forwarded so
         // token generation stops (and stops billing) when the visitor disconnects.
-        const streamIterable = await openaiService.generateStreamingChatCompletion([
+        const { tokens: streamIterable } = await openaiService.generateStreamingChatCompletion([
           ...systemMessages,
           {
             role: 'user',

@@ -169,7 +169,7 @@ export class OpenAIService {
       maxTokens?: number
       topP?: number
     }
-  ): Promise<{ content: string; usage?: { prompt_tokens: number; completion_tokens: number; total_tokens: number } }> {
+  ): Promise<{ content: string; usage?: { prompt_tokens: number; completion_tokens: number; total_tokens: number }; finishReason?: string | null }> {
     try {
       const response = await this.client.chat.completions.create({
         model: options?.model || CHAT_MODEL,
@@ -186,7 +186,9 @@ export class OpenAIService {
 
       return {
         content,
-        usage: response.usage
+        usage: response.usage,
+        // 'length' means the response hit maxTokens and was cut off mid-answer
+        finishReason: response.choices[0]?.finish_reason ?? null
       }
     } catch (error) {
       console.error('Error generating chat completion:', error)
@@ -204,7 +206,7 @@ export class OpenAIService {
       topP?: number
       signal?: AbortSignal
     }
-  ): Promise<AsyncIterable<string>> {
+  ): Promise<{ tokens: AsyncIterable<string>; getFinishReason: () => string | null }> {
     try {
       const stream = await this.client.chat.completions.create({
         model: options?.model || CHAT_MODEL,
@@ -218,7 +220,14 @@ export class OpenAIService {
         signal: options?.signal
       })
 
-      return this.processStream(stream)
+      // finish_reason arrives on the final chunk, so it is only readable via
+      // getFinishReason() after the token iterable has been fully consumed
+      const finishReasonHolder: { value: string | null } = { value: null }
+
+      return {
+        tokens: this.processStream(stream, finishReasonHolder),
+        getFinishReason: () => finishReasonHolder.value
+      }
     } catch (error) {
       console.error('Error generating streaming chat completion:', error)
       throw new Error(`Failed to generate streaming chat completion: ${error instanceof Error ? error.message : String(error)}`)
@@ -226,10 +235,17 @@ export class OpenAIService {
   }
 
   // Process the streaming response
-  private async* processStream(stream: AsyncIterable<OpenAI.Chat.Completions.ChatCompletionChunk>): AsyncIterable<string> {
+  private async* processStream(
+    stream: AsyncIterable<OpenAI.Chat.Completions.ChatCompletionChunk>,
+    finishReasonHolder?: { value: string | null }
+  ): AsyncIterable<string> {
     try {
       for await (const chunk of stream) {
-        const content = chunk.choices[0]?.delta?.content
+        const choice = chunk.choices[0]
+        if (choice?.finish_reason && finishReasonHolder) {
+          finishReasonHolder.value = choice.finish_reason
+        }
+        const content = choice?.delta?.content
         if (content) {
           yield content
         }

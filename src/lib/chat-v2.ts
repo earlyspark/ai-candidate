@@ -73,7 +73,7 @@ export async function handleV2ChatRequest({
   const generationOptions = {
     model: resolvedModel,
     temperature: 0.7,
-    maxTokens: 500
+    maxTokens: 800
   }
 
   if (stream) {
@@ -94,6 +94,12 @@ export async function handleV2ChatRequest({
     throw new Error('Failed to generate AI response (v2)')
   }
 
+  // 'length' means the answer hit maxTokens and ends mid-sentence
+  const truncated = aiResponse.finishReason === 'length'
+  if (truncated) {
+    console.warn(`v2 response truncated at maxTokens (session ${sessionId})`)
+  }
+
   const assistantMessage = { role: 'assistant' as const, content: aiResponse.content }
   const finalContext = await conversationService.addMessage(sessionId, assistantMessage).catch(err => {
     console.error('Failed to save assistant message (v2):', err)
@@ -106,6 +112,7 @@ export async function handleV2ChatRequest({
     cached: false,
     architecture: 'v2',
     model: resolvedModel,
+    truncated,
     usage: aiResponse.usage || null,
     knowledgeTokenEstimate,
     search: { resultsCount: 0, categories: {}, processingTime: 0 },
@@ -150,7 +157,7 @@ async function handleV2Streaming({
         })
         controller.enqueue(encoder.encode(`data: ${metadata}\n\n`))
 
-        const streamIterable = await openaiService.generateStreamingChatCompletion(modelMessages, {
+        const { tokens: streamIterable, getFinishReason } = await openaiService.generateStreamingChatCompletion(modelMessages, {
           ...generationOptions,
           signal: abortSignal
         })
@@ -163,6 +170,12 @@ async function handleV2Streaming({
           controller.enqueue(encoder.encode(`data: ${chunk}\n\n`))
         }
 
+        // 'length' means the answer hit maxTokens and ends mid-sentence
+        const truncated = getFinishReason() === 'length'
+        if (truncated) {
+          console.warn(`v2 streaming response truncated at maxTokens (session ${sessionId})`)
+        }
+
         // Save the assistant turn, then send the completion event
         const assistantMessage = { role: 'assistant' as const, content: fullResponse }
         const finalContext = await conversationService.addMessage(sessionId, assistantMessage).catch(err => {
@@ -172,6 +185,7 @@ async function handleV2Streaming({
 
         const finalData = JSON.stringify({
           type: 'complete',
+          truncated,
           context: {
             status: conversationService.getContextStatus(finalContext.tokenCount),
             tokenCount: finalContext.tokenCount,
