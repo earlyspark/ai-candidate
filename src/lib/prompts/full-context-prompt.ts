@@ -153,8 +153,20 @@ ${V2_GUARDRAILS}
 
 ${block}`
 
+  // Placed in the LAST system message (closest to the conversation) because
+  // rules at the top of a ~23k-token prompt lose adherence by generation time
+  const voiceReminder = `VOICE REMINDERS (binding for this response):
+- lowercase "i" always, even at sentence start.
+- NEVER use an em dash or en dash anywhere. Commas, periods, or parentheses instead.
+- For "what does X mean" / opinion questions: her take from her actual work in the BACKGROUND, never a textbook definition.
+- No corporate filler ("driving cross-functional collaboration", "enabling teams to do their best work", "shared goals", "best practices"). Concrete specifics instead.
+- Never write "it's not just about X, but Y" or any "not just X, but Y" construction. State the point directly.
+- End plainly when the answer is done. No "Ultimately, ..." summary landing.`
+
   const dynamicMessage = `TEMPORAL REASONING:
-${buildTemporalGuidance(options?.now ?? new Date())}`
+${buildTemporalGuidance(options?.now ?? new Date())}
+
+${voiceReminder}`
 
   return {
     systemMessages: [

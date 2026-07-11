@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { openaiService, CHAT_MODEL } from './openai'
+import { openaiService } from './openai'
 import { conversationService } from './conversation-service'
 import { buildFullContextSystemMessages } from './prompts/full-context-prompt'
 import type { RateLimitResult } from './rate-limiter'
@@ -17,6 +17,12 @@ import type { RateLimitResult } from './rate-limiter'
 
 // Models allowed via the request-body override during evaluation
 const ALLOWED_MODELS = ['gpt-4o-mini', 'gpt-4.1-mini']
+
+// v2 defaults to gpt-4.1-mini: side-by-side testing showed gpt-4o-mini cannot
+// reliably follow the voice profile's constraints (em-dash ban, "not just X
+// but Y" ban, lowercase i) in a ~23k-token prompt, while gpt-4.1-mini can.
+// Overridable per environment without a code change.
+const V2_DEFAULT_MODEL = process.env.OPENAI_CHAT_MODEL_V2 ?? 'gpt-4.1-mini'
 
 const HISTORY_TURNS = 6
 
@@ -37,7 +43,7 @@ export async function handleV2ChatRequest({
   rateLimitResult,
   abortSignal
 }: V2ChatParams): Promise<Response> {
-  const resolvedModel = model && ALLOWED_MODELS.includes(model) ? model : CHAT_MODEL
+  const resolvedModel = model && ALLOWED_MODELS.includes(model) ? model : V2_DEFAULT_MODEL
 
   // Record the user message (same behavior as v1: continue on failure)
   const userMessage = { role: 'user' as const, content: message }
