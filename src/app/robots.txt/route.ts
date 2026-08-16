@@ -11,9 +11,7 @@ Disallow: /api/admin
 Disallow: /auth
 
 # Disallow debug paths
-Disallow: /api/debug
-
-Sitemap: https://chat.earlyspark.com/sitemap.xml`
+Disallow: /api/debug`
 
   return new NextResponse(robotsTxt, {
     headers: {

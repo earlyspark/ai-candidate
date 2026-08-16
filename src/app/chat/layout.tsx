@@ -3,6 +3,14 @@ import type { Metadata } from 'next'
 export const metadata: Metadata = {
   title: 'Chat with @earlyspark',
   description: 'An AI experiment in professional representation',
+  robots: {
+    index: false,
+    follow: true,
+    googleBot: {
+      index: false,
+      follow: true,
+    },
+  },
   alternates: {
     canonical: 'https://chat.earlyspark.com',
   },
@@ -23,4 +31,3 @@ export const metadata: Metadata = {
 export default function ChatLayout({ children }: { children: React.ReactNode }) {
   return children
 }
-
