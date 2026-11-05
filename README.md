@@ -1,36 +1,36 @@
 # AI Candidate
 
-An AI-powered candidate agent that represents you professionally for initial screening with headhunters and recruiters. The system uses RAG (Retrieval-Augmented Generation) to provide authentic responses based on your real experience, communication style, and career preferences.
+An AI-powered candidate agent that represents you professionally for initial screening with headhunters and recruiters. The chat answers from your full knowledge base in a single prompt, with retrieval-augmented search available as a fallback, so responses reflect your real experience, communication style, and career preferences.
 
 ## Features
 
 - **Intelligent Chat Interface**: Mobile-first chat experience with real-time responses
-- **Advanced RAG System**: Semantic search with multi-granularity chunking and cross-reference ranking
+- **Full-Context Answers**: The whole knowledge base is rendered into one prompt, ordered for OpenAI prompt caching
+- **RAG Fallback Mode**: Semantic search with multi-granularity chunking and cross-reference ranking
 - **Authentic Communication**: LLM-driven authenticity with confidence-based response calibration
-- **Content Management**: Admin interface for managing resume, experience stories, projects, and skills
+- **Versioned Knowledge Base**: Content organized into five categories, with version history and rollback
 - **AI-Assisted Tagging System**: Hybrid tagging with LLM-generated suggestions, existing tag vocabulary, and manual override
 - **Response Caching**: High-performance caching system for fast response times
 - **Rate Limiting**: Built-in protections that throttle chat traffic per client
 - **Temporal Query Intelligence**: Context-aware processing with recency detection
+- **Data Retention**: Conversations are automatically deleted after 90 days
 - **Professional Representation**: First-person candidate representation with authenticity safeguards
 
 ## Technology Stack
 
-- **Frontend/Backend**: Next.js 15.5.3 with TypeScript 5
-- **Database**: Supabase with pgvector extension for vector search
-- **AI**: OpenAI GPT-4o-mini + text-embedding-3-small for embeddings
-- **Authentication**: Google OAuth for admin access
-- **Styling**: Tailwind CSS with mobile-first design
+- **Frontend/Backend**: Next.js 15.5.26 with React 19.1 and TypeScript 5
+- **Database**: Supabase Postgres with the pgvector extension for vector search
+- **AI**: OpenAI gpt-4.1-mini (chat), gpt-4o-mini (helper calls and RAG mode), text-embedding-3-small (embeddings)
+- **Styling**: Tailwind CSS 4 with mobile-first design
 - **Hosting**: Vercel
 
 ## Getting Started
 
 ### Prerequisites
 
-- Node.js 18+ and npm
-- Supabase account with pgvector extension enabled
+- Node.js 18.18+ and npm
+- Supabase account with the pgvector extension enabled
 - OpenAI API key
-- Google OAuth credentials
 
 ### Installation
 
@@ -46,7 +46,7 @@ npm install
 ```
 
 3. Set up environment variables:
-Create a `.env.local` file with the required variables (see `.env.local` for complete list)
+Copy `.env.example` to `.env.local` and fill in the values.
 
 4. Run the development server:
 ```bash
@@ -55,35 +55,34 @@ npm run dev
 
 5. Open [http://localhost:3000](http://localhost:3000) to see the application
 
-### Admin Setup
-
-- Navigate to `/admin` to access the content management interface
-- Use Google OAuth with your configured admin email
-- Add your professional content across 5 categories:
-  - Resume & Background
-  - Experience Stories (STAR format)
-  - Technical Projects
-  - Communication Style
-  - Skills & Preferences
-
 ## Project Structure
 
 ```
 src/
 ├── app/                    # Next.js app router
-│   ├── admin/             # Admin interface pages
 │   ├── api/               # API routes
 │   ├── chat/              # Public chat interface
-│   └── auth/              # Authentication
+│   └── page.tsx           # Standalone homepage
 ├── components/            # React components
 ├── lib/                   # Core services
-│   ├── chunking/          # Content processing
+│   ├── chunking/          # Category-specific content processing
+│   ├── prompts/           # Chat system prompts
+│   ├── tagging/           # Tag suggestions and analytics
 │   ├── client/            # Client-side services
-│   └── *.ts               # Database, AI, and search services
+│   └── *.ts               # Database, AI, chat, and search services
 └── types/                 # TypeScript definitions
 ```
 
 ## Key Concepts
+
+### Chat Architecture
+
+The chat runs in one of two modes, selected by an environment setting:
+
+- **Single-prompt mode (default)**: Every active piece of content is rendered into one system message, capped at 110k tokens. Content is ordered so the stable part of the prompt is reused by OpenAI prompt caching across requests. The assembled prompt is cached in memory for 10 minutes and refreshed automatically whenever content changes.
+- **RAG mode (fallback)**: Each question is embedded and matched against content chunks using the search system described below, and only the most relevant chunks are sent to the model.
+
+Single-prompt mode gives the model the full picture of your background on every question, so it can connect experiences across categories. RAG mode keeps prompts small if the knowledge base grows past the single-prompt cap.
 
 ### Session Management
 
@@ -103,6 +102,8 @@ The system organizes content into 5 specialized categories optimized for differe
 - **Technical Projects**: Implementation details, architecture, challenges
 - **Communication Style**: Real conversations showing tone and personality
 - **Skills & Preferences**: Technical abilities, career goals, compensation
+
+Saving a change to existing content creates a new version and keeps the previous one inactive, so earlier versions can be restored.
 
 ### Special Tags and Cross-Category Processing
 The system supports special tags that control content processing behavior beyond basic categorization:
@@ -152,67 +153,23 @@ This intelligent processing ensures that when recruiters ask questions, the AI c
 
 ### AI-Assisted Tagging System
 
-The system uses a **hybrid approach** that combines AI intelligence with user control for efficient, consistent tagging:
+Tags combine AI suggestions with your own vocabulary so they stay consistent over time:
 
-#### How It Works
+- **AI suggestions**: An LLM analyzes content and suggests 5-8 tags focused on skills, technologies, roles, and key concepts (e.g., "Built a React app with TypeScript" → `react`, `typescript`, `frontend`, `web-development`)
+- **Autocomplete from past tags**: Previously used tags are suggested as you type, keeping naming consistent (always `react`, not `reactjs`)
+- **Normalization and validation**: Tags are converted to lowercase-with-hyphens and must be 2-50 characters
+- **Usage analytics**: Tag frequency and per-category patterns are tracked in the `tag_usage` table, and similar tags that may need merging (e.g., `js` vs `javascript`) are detected
+- **Suggestion cache**: AI suggestions are cached for 7 days by a SHA-256 hash of the content (`tag_suggestions_cache` table), so analyzing the same content twice makes no extra LLM call
 
-The tagging system provides multiple ways to tag your content efficiently:
-
-1. **Manual AI Analysis** (Optional): Click "Analyze Content" to get AI-generated tag suggestions
-   - Uses GPT-4o-mini to analyze your content and suggest 5-8 relevant tags
-   - Focuses on skills, technologies, roles, and key concepts
-   - Example: "Built a React app with TypeScript" → suggests `react`, `typescript`, `frontend`, `web-development`
-   - You can add individual tags or add all suggestions at once
-
-2. **Autocomplete** (As you type): Start typing in the tag field to see previous tags you've used
-   - Activates after typing 2+ characters
-   - Suggests tags from your historical usage that match what you're typing
-   - Ensures consistent naming (e.g., always `react` not `reactjs` or `react.js`)
-   - **Note**: Only works once you've created some tagged content
-
-3. **Example Tags** (Quick shortcuts): Click pre-selected example tags for instant addition
-   - Category-specific examples (different for resume, projects, skills, etc.)
-   - Click the "+" button to add an example tag
-   - Serves as inspiration for common tag patterns
-
-4. **Manual Entry** (Full control): Type your own tags directly
-   - Comma-separated format: `react, typescript, team-leadership`
-   - Tags are automatically normalized to lowercase-with-hyphens format
-   - Validation ensures proper formatting (2-50 characters, no special chars)
-
-#### Tag Learning & Evolution
-
-The system tracks tag usage and learns from your choices:
-- **Usage Analytics**: Tracks which tags you use most frequently (stored in `tag_usage` table)
-- **Category Patterns**: Remembers which tags work best for each content type
-- **Autocomplete Source**: Your previously-used tags populate the autocomplete suggestions as you type
-- **Consolidation Detection**: Identifies similar tags that might need merging (e.g., `js` vs `javascript`, `React` vs `react`)
-
-#### Performance Optimization
-
-**Tag Suggestions Cache** (`tag_suggestions_cache` table):
-- **Content-based hashing**: SHA-256 hash identifies duplicate content
-- **7-day TTL**: AI-generated suggestions are cached for a week
-- **Hit tracking**: Monitors which suggestions are most useful
-- **Cost reduction**: Clicking "Analyze Content" twice on same content = instant cached response (no LLM call)
-
-**First-Time User Experience**:
-- **Manual entry**: Start by manually entering tags for your first few pieces of content
-- **Use examples**: Click the example tags provided for each category to build your tag vocabulary
-- **AI assist**: Click "Analyze Content" to get AI suggestions for complex content
-- **Autocomplete grows**: As you tag more content, autocomplete becomes more useful
-
-This hybrid approach saves you time while ensuring tags remain consistent, relevant, and aligned with your professional vocabulary.
-
-### Advanced RAG System
-- **Hybrid Search Formula**: Combines semantic similarity (60%), category relevance (25%), and tag matching (15%)
+### RAG Search (fallback mode)
+- **Hybrid Search Formula**: Combines semantic similarity (70%), category relevance (20%), and tag matching (10%)
 - **Tag-Weighted Search**: Lightweight keyword extraction boosts results when query terms match content tags
 - **Multi-Granularity Chunking**: Semantic boundary detection with hierarchical relationship analysis
 - **Temporal Query Intelligence**: Recency-based confidence scoring for "recent", "latest", "current" queries
 - **Cross-Reference Ranking**: Related content discovery across categories
 - **LLM-Driven Authenticity**: Confidence calibration with prompt-based response tuning
 - **Dual-Table Architecture**: Separate content management (`knowledge_versions`) and search (`knowledge_chunks`) for performance
-- **High-Performance Caching**: Semantic similarity matching for sub-second response times
+- **Response Caching**: Semantically similar questions (85%+ similarity) reuse confident answers for 7 days
 
 ## Development
 

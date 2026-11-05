@@ -36,6 +36,8 @@ debug/
 
 # env files (can opt-in for committing if needed)
 .env*
+# The template lists variable names only (no values), so it is committed
+!.env.example
 
 # vercel
 .vercel
