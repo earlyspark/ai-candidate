@@ -106,19 +106,16 @@ The system organizes content into 5 specialized categories optimized for differe
 Saving a change to existing content creates a new version and keeps the previous one inactive, so earlier versions can be restored.
 
 ### Special Tags and Cross-Category Processing
-The system supports special tags that control content processing behavior beyond basic categorization:
 
 **`communication-style-source` Tag**:
-- Enables dual-purpose content processing
-- Creates both **information chunks** (for factual retrieval) AND **style chunks** (for communication pattern learning)
-- Can be used in any category to help the AI learn your voice and communication style
-- Particularly useful for Slack conversations, email exchanges, or any content that demonstrates how you communicate
+- Marks content in any category as a strong example of your writing
+- When content is saved, creates both **information chunks** (facts) and **style chunks** (communication patterns)
+- Style chunks are stored for the RAG fallback mode, but they don't currently get embeddings, so search doesn't return them
+- In the default single-prompt mode, the tag appears on the entry's tag line but doesn't change how answers are written
 
-**Example**: Adding `communication-style-source` to a technical project description allows the AI to:
-1. Learn factual details about the project (standard processing)
-2. Analyze and learn your communication patterns when discussing technical topics (style processing)
+### Voice
 
-This dual-purpose approach helps the AI provide more authentic responses that match both your knowledge and communication style.
+The chatbot's voice comes from a written voice profile that's included in every prompt, in both chat modes. It covers tone, phrasing habits, and phrases to avoid. A short reminder at the end of the prompt reinforces the strictest rules. Adding content gives the chatbot more to talk about but doesn't change how it sounds. To change the voice, update the voice profile.
 
 ### Intelligent Content Processing
 
