@@ -21,12 +21,13 @@ export async function GET(request: NextRequest) {
 
   try {
     // The cheapest read that still round-trips to Postgres. `search_configuration`
-    // holds a single row, so this stays constant-time as the corpus grows.
+    // holds at most a few rows, so this stays constant-time as the corpus grows.
+    // No .single(): an empty table still counts as database activity and must
+    // not be reported as a failed keep-alive.
     const { error } = await supabase
       .from('search_configuration')
       .select('id')
       .limit(1)
-      .single()
 
     if (error) {
       throw error

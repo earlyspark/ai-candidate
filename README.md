@@ -18,7 +18,7 @@ An AI-powered candidate agent that represents you professionally for initial scr
 
 ## Technology Stack
 
-- **Frontend/Backend**: Next.js 15.5.26 with React 19.1 and TypeScript 5
+- **Frontend/Backend**: Next.js 15.5.29 with React 19.1 and TypeScript 5
 - **Database**: Supabase Postgres with the pgvector extension for vector search
 - **AI**: OpenAI gpt-4.1-mini (chat), gpt-4o-mini (helper calls and RAG mode), text-embedding-3-small (embeddings)
 - **Styling**: Tailwind CSS 4 with mobile-first design

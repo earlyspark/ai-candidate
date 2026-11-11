@@ -7,6 +7,7 @@ import { MetadataExtractor } from './metadata-extraction'
 import SearchConfigService from './search-config'
 import { TagExtractionService } from './tag-extraction-service'
 import { TemporalReferenceService } from './temporal-reference-service'
+import { parseStoredEmbedding } from './embedding-utils'
 
 export interface SearchResult {
   chunk: KnowledgeChunk
@@ -1080,17 +1081,7 @@ Respond in JSON format:
           if (!chunk.embedding) continue;
 
           // Parse embedding (handle both array and string formats from Supabase)
-          let parsedEmbedding: number[] | null = null;
-          try {
-            parsedEmbedding = Array.isArray(chunk.embedding)
-              ? (chunk.embedding as number[])
-              : (typeof chunk.embedding === 'string'
-                  ? JSON.parse(chunk.embedding)
-                  : null);
-          } catch {
-            continue;
-          }
-
+          const parsedEmbedding = parseStoredEmbedding(chunk.embedding);
           if (!parsedEmbedding) continue;
 
           // Calculate cosine similarity
@@ -1627,16 +1618,7 @@ Respond in JSON format:
         if (!chunk.embedding) continue
 
         // Normalize embedding from DB: it might be stored as JSON/text
-        let emb: number[] | null = null
-        try {
-          emb = Array.isArray(chunk.embedding)
-            ? (chunk.embedding as number[])
-            : (typeof chunk.embedding === 'string'
-                ? JSON.parse(chunk.embedding)
-                : null)
-        } catch {
-          emb = null
-        }
+        const emb = parseStoredEmbedding(chunk.embedding)
         if (!emb || emb.length !== expectedDim) {
           // Skip invalid/mismatched embeddings instead of throwing
           continue
@@ -1663,15 +1645,17 @@ Respond in JSON format:
         }
       }
 
-      // Sort by similarity and add ranks
-      results
+      // Sort by similarity, keep the top `limit`, and add ranks. The sliced
+      // array is what gets returned: slice() does not shorten `results` itself.
+      const topResults = results
         .sort((a, b) => b.similarity - a.similarity)
         .slice(0, limit)
-        .forEach((result, index) => {
-          result.rank = index + 1
-        })
 
-      return results
+      topResults.forEach((result, index) => {
+        result.rank = index + 1
+      })
+
+      return topResults
 
     } catch (error) {
       console.error('Error in fallback search:', error)
@@ -1683,13 +1667,14 @@ Respond in JSON format:
   // Get search statistics
   async getSearchStats() {
     try {
+      // head: true returns only the count, not every row's id
       const { count: totalChunks } = await supabase
         .from('knowledge_chunks')
-        .select('id', { count: 'exact' })
+        .select('id', { count: 'exact', head: true })
 
       const { count: embeddedChunks } = await supabase
         .from('knowledge_chunks')
-        .select('id', { count: 'exact' })
+        .select('id', { count: 'exact', head: true })
         .not('embedding', 'is', null)
 
       const { data: categoryStats } = await supabase

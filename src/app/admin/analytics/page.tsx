@@ -75,8 +75,9 @@ export default function ConversationAnalyticsPage() {
   }
 
   const handleDaysChange = (days: number) => {
+    // The effect below reloads whenever selectedDays changes, so calling
+    // loadAnalytics here as well would fetch everything twice
     setSelectedDays(days)
-    loadAnalytics(days)
   }
 
   const formatDate = (dateString: string) => {

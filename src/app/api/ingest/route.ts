@@ -11,7 +11,7 @@ export const dynamic = 'force-dynamic'
  * Runs the exact same processing pipeline as the admin content form
  * (validate → tag → version → chunk → embed → invalidate caches), but
  * authenticates with a bearer secret (INGEST_SECRET) instead of an admin
- * browser session, so tooling — e.g. the ingest-chatbot-content skill —
+ * browser session, so tooling — e.g. the local-chatbot-update skill —
  * can add or update knowledge base content headlessly. Fails closed with
  * HTTP 503 when the secret is not configured.
  */

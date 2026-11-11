@@ -16,8 +16,7 @@ export default function AdminPage() {
           Knowledge Base Management
         </h2>
         <p className="text-gray-600 mb-8">
-          This is where you&apos;ll manage your AI candidate&apos;s knowledge base.
-          Features coming soon:
+          Manage your AI candidate&apos;s knowledge base.
         </p>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">

@@ -12,14 +12,12 @@
   "dependencies": {
     "@heroicons/react": "^2.2.0",
     "@supabase/supabase-js": "^2.57.4",
-    "@types/uuid": "^10.0.0",
     "nanoid": "^5.1.16",
-    "next": "15.5.26",
+    "next": "15.5.29",
     "next-auth": "^4.24.15",
     "openai": "^5.20.2",
     "react": "19.1.0",
-    "react-dom": "19.1.0",
-    "uuid": "^13.0.0"
+    "react-dom": "19.1.0"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",
@@ -28,9 +26,8 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
-    "eslint-config-next": "15.5.26",
+    "eslint-config-next": "15.5.29",
     "tailwindcss": "^4",
-    "ts-node": "^10.9.2",
     "typescript": "^5"
   },
   "overrides": {

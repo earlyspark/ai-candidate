@@ -301,18 +301,14 @@ export class CommunicationChunker extends BaseChunker {
       }
     }
     
-    // Analyze helpfulness patterns
-    const _helpfulnessPatterns = [
-      'provides-examples',
-      'asks-clarifying-questions',
-      'offers-alternatives',
-      'explains-reasoning'
-    ]
-    
+    // Analyze helpfulness patterns (provides-examples, asks-clarifying-questions,
+    // offers-alternatives, explains-reasoning)
     if (contentLower.includes('example') || contentLower.includes('like this')) {
       patterns.helpfulness.push('provides-examples')
     }
-    if (contentLower.includes('?') && contentLower.includes('what') || contentLower.includes('which')) {
+    // A clarifying question needs a question mark plus a question word; the
+    // parentheses matter because && binds tighter than ||
+    if (contentLower.includes('?') && (contentLower.includes('what') || contentLower.includes('which'))) {
       patterns.helpfulness.push('asks-clarifying-questions')
     }
     if (contentLower.includes('alternatively') || contentLower.includes('or you could')) {

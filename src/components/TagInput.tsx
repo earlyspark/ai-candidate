@@ -167,6 +167,7 @@ export default function TagInput({ category, value, onChange, placeholder }: Tag
         <div className="flex flex-wrap gap-2 mb-3">
           {tagExamples.examples.map(example => (
             <button
+              type="button"
               key={example}
               onClick={() => addExampleTag(example)}
               className="inline-flex items-center px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded-md hover:bg-blue-200 transition-colors"
