@@ -393,7 +393,7 @@ export class ResponseCacheService {
     try {
       const { count } = await supabaseAdmin
         .from('response_cache')
-        .select('id', { count: 'exact' })
+        .select('id', { count: 'exact', head: true }) // count only, no rows
 
       if ((count || 0) >= this.MAX_CACHE_SIZE) {
         // Remove oldest entries (LRU)

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { isIP } from 'net'
 import { conversationService } from '@/lib/conversation-service'
 import { applyRateLimit, getClientIP, RATE_LIMIT_CONFIGS } from '@/lib/rate-limiter'
 
@@ -10,8 +11,10 @@ export async function POST(request: NextRequest) {
 
     // Get client IP address for session tracking and rate limiting
     const clientIP = getClientIP(request)
-    const ipHeader = request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip')
-    const ipAddress = ipHeader && ipHeader.trim().length > 0 ? ipHeader : null
+    // conversations.ip_address is an INET column: store only a single valid
+    // address. A raw x-forwarded-for chain ("a, b") or the rate limiter's
+    // 'unknown-ip' placeholder would make the insert, and session creation, fail.
+    const ipAddress = isIP(clientIP) ? clientIP : null
 
     // Session creation gets a stricter limit than other conversation actions
     const rateLimitConfig = action === 'create-session'

@@ -372,15 +372,23 @@ export class TagAnalyticsService {
       const expiresAt = new Date()
       expiresAt.setDate(expiresAt.getDate() + 7) // 7-day TTL
 
-      await supabase
+      // Upsert on the table's (content_hash, category) unique key. A plain
+      // insert collides with an expired row for the same content, so the cache
+      // would never refresh and every later analysis would call the LLM again.
+      const { error } = await supabase
         .from('tag_suggestions_cache')
-        .insert({
+        .upsert({
           content_hash: contentHash,
           category,
           content_preview: contentPreview,
           suggestions,
-          expires_at: expiresAt.toISOString()
-        })
+          expires_at: expiresAt.toISOString(),
+          hit_count: 0
+        }, { onConflict: 'content_hash,category' })
+
+      if (error) {
+        console.error('Error storing cached suggestions:', error)
+      }
     } catch (error) {
       console.error('Error storing cached suggestions:', error)
       // Don't throw - caching is not critical

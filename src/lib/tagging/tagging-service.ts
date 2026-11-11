@@ -214,12 +214,14 @@ export class TaggingService {
       .trim()
       // Replace spaces with hyphens
       .replace(/\s+/g, '-')
+      // Remove special characters except hyphens and alphanumeric. This runs
+      // before the hyphen cleanup because stripping characters can itself
+      // expose doubled or edge hyphens ("c++ -dev" → "c--dev", "(beta)-" → "beta-")
+      .replace(/[^a-z0-9-]/g, '')
       // Replace multiple hyphens with single hyphen
       .replace(/-+/g, '-')
       // Remove leading/trailing hyphens
       .replace(/^-+|-+$/g, '')
-      // Remove special characters except hyphens and alphanumeric
-      .replace(/[^a-z0-9-]/g, '')
   }
 
   private validateTag(tag: string): {isValid: boolean, reason?: string} {

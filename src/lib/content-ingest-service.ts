@@ -67,6 +67,13 @@ export async function processAndStoreContent({ category, content, tags, editingI
   // Convert editingId to number if it's a string, handle null/undefined
   const parsedEditingId = editingId ? (typeof editingId === 'string' ? parseInt(editingId, 10) : Number(editingId)) : null
 
+  // A malformed editingId must be rejected, not ignored: treating it as "no
+  // edit" would silently save a second active copy next to the content the
+  // caller meant to replace.
+  if (parsedEditingId !== null && (!Number.isInteger(parsedEditingId) || parsedEditingId <= 0)) {
+    return { status: 400, body: { message: 'Invalid editingId' } }
+  }
+
   if (parsedEditingId) {
     // Editing specific content - this is a version update
     const { data: existingContent, error: fetchError } = await supabaseAdmin
@@ -136,6 +143,11 @@ export async function processAndStoreContent({ category, content, tags, editingI
 
     console.log(`Deactivated version ID:${oldVersionId} and created version ${newVersion}`)
   }
+
+  // Refresh the v2 full-context prompt cache as soon as the active versions
+  // change. v2 reads knowledge_versions directly, so this must not wait on (or
+  // be skipped by a failure in) the chunking and embedding steps below.
+  invalidateKnowledgeBaseCache()
 
   // Process content through chunking system
   let chunkingResult
@@ -218,9 +230,6 @@ export async function processAndStoreContent({ category, content, tags, editingI
     }
   }
 
-  // Refresh the v2 full-context prompt cache so new content is visible immediately
-  invalidateKnowledgeBaseCache()
-
   // Invalidate relevant cache entries
   try {
     const cacheInvalidations = []
@@ -256,7 +265,7 @@ export async function processAndStoreContent({ category, content, tags, editingI
       message: 'Content processed successfully with hierarchical chunking',
       versionId: versionData.id,
       version: versionData.version,
-      isUpdate: parsedEditingId !== null && parsedEditingId !== undefined,
+      isUpdate: parsedEditingId !== null,
       processing: {
         totalChunks: chunkingResult.totalChunks,
         processingTime: chunkingResult.processingTime,

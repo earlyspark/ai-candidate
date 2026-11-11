@@ -185,16 +185,7 @@ export async function POST(request: NextRequest) {
     // This allows questions that seem general but are actually about the candidate's
     // projects/experience to be answered (e.g., "recipes for Korean baby food" → koreanbabymeals.com)
 
-    // Get client IP for rate limiting (future enhancement)
-    // const ipAddress = request.headers.get('x-forwarded-for') ||
-    //                  request.headers.get('x-real-ip') ||
-    //                  'unknown'
-
-    // Parallel execution: Get context and cache check simultaneously
-    const [context, thresholds] = await Promise.all([
-      conversationService.getContext(sessionId),
-      SearchConfigService.getThresholds()
-    ])
+    const context = await conversationService.getContext(sessionId)
 
     if (!context) {
       return NextResponse.json(
@@ -224,6 +215,10 @@ export async function POST(request: NextRequest) {
         abortSignal: request.signal
       })
     }
+
+    // Search thresholds are only needed by the RAG path, so they are loaded
+    // after the v2 branch has returned
+    const thresholds = await SearchConfigService.getThresholds()
 
     // Create context hash for caching
     const contextHash = conversationService.createContextHash(context.messages)
@@ -366,32 +361,29 @@ export async function POST(request: NextRequest) {
 
     // Handle off-topic queries before generating response
     if (shouldDeclineOffTopic) {
-      const context = await conversationService.getContext(sessionId)
-      if (!context) {
-        return NextResponse.json(
-          { success: false, message: 'Session not found' },
-          { status: 404 }
-        )
-      }
-
-      const conversationHistory = context.messages
+      // The user message was already saved above (contextWithUserMessage), so
+      // only the assistant reply is added here; saving the user message again
+      // would duplicate it in the stored conversation.
+      const offTopicHistory = contextWithUserMessage.messages
         .slice(-4)
         .map(msg => `${msg.role}: ${msg.content}`)
         .join('\n')
 
-      const offTopicContent = await generateOffTopicResponse(message, conversationHistory)
+      const offTopicContent = await generateOffTopicResponse(message, offTopicHistory)
 
-      const userMessage = { role: 'user' as const, content: message }
       const offTopicResponse = { role: 'assistant' as const, content: offTopicContent }
 
-      let finalContext
+      // Defaults to the pre-reply context so a failed save still yields a
+      // usable status for the response
+      let finalContext: { tokenCount: number; messages: unknown[] } = {
+        tokenCount: contextWithUserMessage.tokenCount,
+        messages: contextWithUserMessage.messages
+      }
       try {
-        await conversationService.addMessage(sessionId, userMessage)
         finalContext = await conversationService.addMessage(sessionId, offTopicResponse)
       } catch (convError) {
         console.error('Failed to save off-topic conversation:', convError)
         // Continue without saving - don't fail the response
-        finalContext = context
       }
 
       // Handle streaming vs non-streaming for off-topic

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { taggingService } from '@/lib/tagging'
 import { authOptions } from '@/lib/auth'
+import { parseIntParam } from '@/lib/query-params'
 
 export async function GET(request: NextRequest) {
   try {
@@ -13,7 +14,7 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url)
     const partialTag = searchParams.get('q')
     const category = searchParams.get('category')
-    const limit = parseInt(searchParams.get('limit') || '10')
+    const limit = parseIntParam(searchParams.get('limit'), 10, { min: 1, max: 50 })
 
     if (!partialTag || !category) {
       return NextResponse.json({ 

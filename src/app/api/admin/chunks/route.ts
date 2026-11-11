@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { supabase } from '@/lib/supabase'
+import { parseIntParam } from '@/lib/query-params'
 
 export async function GET(request: NextRequest) {
   try {
@@ -17,8 +18,8 @@ export async function GET(request: NextRequest) {
 
     const { searchParams } = new URL(request.url)
     const category = searchParams.get('category')
-    const limit = parseInt(searchParams.get('limit') || '50')
-    const offset = parseInt(searchParams.get('offset') || '0')
+    const limit = parseIntParam(searchParams.get('limit'), 50, { min: 1, max: 200 })
+    const offset = parseIntParam(searchParams.get('offset'), 0, { min: 0, max: Number.MAX_SAFE_INTEGER })
 
     let query = supabase
       .from('knowledge_chunks')
@@ -40,10 +41,10 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    // Get total count for pagination
+    // Get total count for pagination (head: true returns the count without rows)
     let countQuery = supabase
       .from('knowledge_chunks')
-      .select('id', { count: 'exact' })
+      .select('id', { count: 'exact', head: true })
 
     if (category) {
       countQuery = countQuery.eq('category', category)

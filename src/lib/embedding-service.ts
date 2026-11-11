@@ -1,6 +1,7 @@
 import { openaiService } from './openai'
 import { supabase } from './supabase'
 import type { KnowledgeChunk } from './supabase'
+import { parseStoredEmbedding } from './embedding-utils'
 
 export interface EmbeddingResult {
   success: boolean
@@ -42,13 +43,17 @@ export class EmbeddingService {
         }
       }
 
-      // Skip if already has valid embedding matching expected dimensions
+      // Skip if already has valid embedding matching expected dimensions.
+      // Stored vectors come back from Supabase as strings, so they are parsed
+      // before the length check; otherwise every chunk would look invalid and
+      // be re-embedded (and billed) on each call.
       const expectedDim = openaiService.getEmbeddingModelInfo().dimensions
-      if (Array.isArray(chunk.embedding) && chunk.embedding.length === expectedDim) {
+      const existingEmbedding = parseStoredEmbedding(chunk.embedding)
+      if (existingEmbedding && existingEmbedding.length === expectedDim) {
         return {
           success: true,
           chunkId,
-          embedding: chunk.embedding,
+          embedding: existingEmbedding,
           tokenCount: 0,
           cost: 0
         }
@@ -195,7 +200,12 @@ export class EmbeddingService {
         throw new Error(`Failed to fetch chunks: ${error.message}`)
       }
 
-      const invalid = (chunks || []).filter((c: { id: string; embedding: number[] | null }) => !Array.isArray(c.embedding) || c.embedding.length !== expectedDim)
+      // Parse before validating: a correctly sized vector serialized as a
+      // string is valid and must not be regenerated
+      const invalid = (chunks || []).filter((c: { id: number; embedding: unknown }) => {
+        const parsed = parseStoredEmbedding(c.embedding)
+        return !parsed || parsed.length !== expectedDim
+      })
 
       if (invalid.length === 0) {
         return {
@@ -285,33 +295,41 @@ export class EmbeddingService {
   // Get embedding statistics
   async getEmbeddingStats() {
     try {
-      // Total chunks
+      // Total chunks (head: true returns only the count, not the rows)
       const { count: totalChunks } = await supabase
         .from('knowledge_chunks')
-        .select('id', { count: 'exact' })
+        .select('id', { count: 'exact', head: true })
 
       // Chunks with embeddings
       const { count: embeddedChunks } = await supabase
         .from('knowledge_chunks')
-        .select('id', { count: 'exact' })
+        .select('id', { count: 'exact', head: true })
         .not('embedding', 'is', null)
 
-      // Chunks by category
-      const { data: categoryStats } = await supabase
+      // Chunks by category. Only the category column is selected: pulling the
+      // 1536-float embedding of every chunk just to test it for null would
+      // transfer megabytes for a handful of counters.
+      const { data: allCategories } = await supabase
         .from('knowledge_chunks')
-        .select('category, embedding')
+        .select('category')
 
-      const categoryBreakdown = categoryStats?.reduce((acc, chunk) => {
-        const category = chunk.category
-        if (!acc[category]) {
-          acc[category] = { total: 0, embedded: 0 }
+      const { data: embeddedCategories } = await supabase
+        .from('knowledge_chunks')
+        .select('category')
+        .not('embedding', 'is', null)
+
+      const categoryBreakdown: Record<string, { total: number, embedded: number }> = {}
+      for (const chunk of allCategories || []) {
+        if (!categoryBreakdown[chunk.category]) {
+          categoryBreakdown[chunk.category] = { total: 0, embedded: 0 }
         }
-        acc[category].total++
-        if (chunk.embedding) {
-          acc[category].embedded++
+        categoryBreakdown[chunk.category].total++
+      }
+      for (const chunk of embeddedCategories || []) {
+        if (categoryBreakdown[chunk.category]) {
+          categoryBreakdown[chunk.category].embedded++
         }
-        return acc
-      }, {} as Record<string, { total: number, embedded: number }>) || {}
+      }
 
       return {
         totalChunks: totalChunks || 0,

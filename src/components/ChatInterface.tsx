@@ -46,8 +46,6 @@ export default function ChatInterface({ sessionId, onContextUpdate }: ChatInterf
     && process.env.NODE_ENV !== 'production'
   const [debugMode, setDebugMode] = useState<boolean>(defaultDebug)
 
-  // Streaming mode: enabled by default and not user-configurable
-  const streamingMode = true
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
 
@@ -60,7 +58,7 @@ export default function ChatInterface({ sessionId, onContextUpdate }: ChatInterf
     scrollToBottom()
   }, [messages])
 
-  // Handle sending messages with streaming support
+  // Handle sending messages (responses always stream)
   const handleSendMessage = async () => {
     if (!inputValue.trim() || isLoading) return
 
@@ -76,11 +74,7 @@ export default function ChatInterface({ sessionId, onContextUpdate }: ChatInterf
     setIsLoading(true)
     setError(null)
 
-    if (streamingMode) {
-      await handleStreamingMessage(userMessage)
-    } else {
-      await handleNonStreamingMessage(userMessage)
-    }
+    await handleStreamingMessage(userMessage)
   }
 
   // Build a user-friendly error message from a failed API response
@@ -99,66 +93,12 @@ export default function ChatInterface({ sessionId, onContextUpdate }: ChatInterf
     return new Error(message)
   }
 
-  // Handle non-streaming message (original logic)
-  const handleNonStreamingMessage = async (userMessage: Message) => {
-    try {
-      const response = await fetch('/api/chat', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          message: userMessage.content,
-          sessionId,
-          stream: false
-        }),
-      })
-
-      if (!response.ok) {
-        throw await errorFromResponse(response)
-      }
-
-      const data = await response.json()
-
-      if (!data.success) {
-        throw new Error(data.message || 'Failed to get response')
-      }
-
-      const assistantMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        role: 'assistant',
-        content: data.response,
-        timestamp: new Date(),
-        cached: data.cached,
-        similarity: data.similarity,
-        sources: data.sources || [],
-        model: data.model || undefined
-      }
-
-      setMessages(prev => [...prev, assistantMessage])
-
-      // Update context status
-      if (data.context) {
-        const newStatus: ContextStatus = {
-          level: data.context.status.level,
-          message: data.context.status.warning || '',
-          tokenCount: data.context.tokenCount,
-          messageCount: data.context.messageCount
-        }
-        setContextStatus(newStatus)
-        onContextUpdate?.(newStatus)
-      }
-
-    } catch (error) {
-      console.error('Error sending message:', error)
-      setError(error instanceof Error ? error.message : 'Failed to send message')
-    } finally {
-      setIsLoading(false)
-    }
-  }
-
   // Handle streaming message
   const handleStreamingMessage = async (userMessage: Message) => {
+    // Set once the assistant placeholder bubble exists, so a failed stream can
+    // remove a bubble that never received any text
+    let assistantId: string | null = null
+
     try {
       const response = await fetch('/api/chat', {
         method: 'POST',
@@ -177,9 +117,10 @@ export default function ChatInterface({ sessionId, onContextUpdate }: ChatInterf
       }
 
       // Create assistant message placeholder
-      const assistantId = (Date.now() + 1).toString()
+      const placeholderId = (Date.now() + 1).toString()
+      assistantId = placeholderId
       const assistantMessage: Message = {
-        id: assistantId,
+        id: placeholderId,
         role: 'assistant',
         content: '',
         timestamp: new Date(),
@@ -208,40 +149,45 @@ export default function ChatInterface({ sessionId, onContextUpdate }: ChatInterf
 
         for (const line of lines) {
           if (line.startsWith('data: ')) {
+            // Only JSON parsing is guarded here. A server-sent 'error' event is
+            // thrown outside this try so it reaches the outer catch and is
+            // shown to the visitor instead of being logged as a parse failure.
+            let data
             try {
-              const data = JSON.parse(line.slice(6))
-
-              if (data.type === 'metadata') {
-                // Update assistant message with sources
-                setMessages(prev => prev.map(msg =>
-                  msg.id === assistantId
-                    ? { ...msg, sources: data.sources }
-                    : msg
-                ))
-              } else if (data.type === 'token') {
-                // Append token to assistant message
-                setMessages(prev => prev.map(msg =>
-                  msg.id === assistantId
-                    ? { ...msg, content: msg.content + data.content }
-                    : msg
-                ))
-              } else if (data.type === 'complete') {
-                // Update context status
-                if (data.context) {
-                  const newStatus: ContextStatus = {
-                    level: data.context.status.level,
-                    message: data.context.status.warning || '',
-                    tokenCount: data.context.tokenCount,
-                    messageCount: data.context.messageCount
-                  }
-                  setContextStatus(newStatus)
-                  onContextUpdate?.(newStatus)
-                }
-              } else if (data.type === 'error') {
-                throw new Error(data.error)
-              }
+              data = JSON.parse(line.slice(6))
             } catch (parseError) {
               console.error('Error parsing streaming data:', parseError)
+              continue
+            }
+
+            if (data.type === 'metadata') {
+              // Update assistant message with sources
+              setMessages(prev => prev.map(msg =>
+                msg.id === placeholderId
+                  ? { ...msg, sources: data.sources }
+                  : msg
+              ))
+            } else if (data.type === 'token') {
+              // Append token to assistant message
+              setMessages(prev => prev.map(msg =>
+                msg.id === placeholderId
+                  ? { ...msg, content: msg.content + data.content }
+                  : msg
+              ))
+            } else if (data.type === 'complete') {
+              // Update context status
+              if (data.context) {
+                const newStatus: ContextStatus = {
+                  level: data.context.status.level,
+                  message: data.context.status.warning || '',
+                  tokenCount: data.context.tokenCount,
+                  messageCount: data.context.messageCount
+                }
+                setContextStatus(newStatus)
+                onContextUpdate?.(newStatus)
+              }
+            } else if (data.type === 'error') {
+              throw new Error(data.error || 'Failed to get response. Please try again.')
             }
           }
         }
@@ -250,6 +196,13 @@ export default function ChatInterface({ sessionId, onContextUpdate }: ChatInterf
     } catch (error) {
       console.error('Error in streaming message:', error)
       setError(error instanceof Error ? error.message : 'Failed to stream message')
+
+      // Drop the placeholder if the stream failed before producing any text;
+      // an empty assistant bubble next to the error banner is just noise
+      if (assistantId) {
+        const failedId = assistantId
+        setMessages(prev => prev.filter(msg => msg.id !== failedId || msg.content.length > 0))
+      }
     } finally {
       setIsLoading(false)
     }

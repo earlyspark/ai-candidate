@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { supabase } from '@/lib/supabase'
+import { parseIntParam } from '@/lib/query-params'
 
 export async function GET(request: NextRequest) {
   try {
@@ -16,8 +17,8 @@ export async function GET(request: NextRequest) {
     }
 
     const { searchParams } = new URL(request.url)
-    const days = parseInt(searchParams.get('days') || '30')
-    const limit = parseInt(searchParams.get('limit') || '50')
+    const days = parseIntParam(searchParams.get('days'), 30, { min: 1, max: 365 })
+    const limit = parseIntParam(searchParams.get('limit'), 50, { min: 1, max: 500 })
 
     // Calculate date range
     const fromDate = new Date()
@@ -42,7 +43,7 @@ export async function GET(request: NextRequest) {
     // Get total conversation count
     const { count: totalConversations } = await supabase
       .from('conversations')
-      .select('id', { count: 'exact' })
+      .select('id', { count: 'exact', head: true }) // count only, no rows
       .gte('created_at', fromDate.toISOString())
 
     // Process conversation data for analytics

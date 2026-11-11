@@ -141,8 +141,14 @@ export default function ContentManagement() {
           }
         }
 
-        if (result.validation?.warnings?.length > 0) {
-          successMessage += ` Warnings: ${result.validation.warnings.join(', ')}`
+        // Combine validation warnings with pipeline warnings (e.g. the content
+        // was saved but chunking failed), which arrive as a top-level array
+        const warnings = [
+          ...(result.validation?.warnings || []),
+          ...(result.warnings || [])
+        ]
+        if (warnings.length > 0) {
+          successMessage += ` Warnings: ${warnings.join(', ')}`
         }
 
         setMessage(successMessage)
@@ -208,6 +214,11 @@ export default function ContentManagement() {
                       content: '',
                       tags: ''
                     })
+                    // The form is now blank, so it no longer represents the
+                    // item being edited. Leaving editingId set would make the
+                    // next save deactivate that item and replace it with
+                    // unrelated content from another category.
+                    setEditingId(null)
                   }}
                   className={`py-2 px-1 border-b-2 font-medium text-sm ${
                     activeTab === category.value

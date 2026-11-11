@@ -53,6 +53,7 @@ export default function ContentAnalyzer({ content, category, onTagsSelected }: C
         </h4>
         {!hasAnalyzed && (
           <button
+            type="button"
             onClick={analyzeContent}
             disabled={isAnalyzing}
             className="px-3 py-1 bg-green-600 text-white text-sm rounded hover:bg-green-700 disabled:opacity-50"
@@ -102,6 +103,7 @@ export default function ContentAnalyzer({ content, category, onTagsSelected }: C
                       </div>
                     </div>
                     <button
+                      type="button"
                       onClick={() => addSingleTag(suggestion)}
                       className="ml-3 px-2 py-1 bg-green-100 text-green-700 text-xs rounded hover:bg-green-200 transition-colors"
                     >
@@ -113,18 +115,21 @@ export default function ContentAnalyzer({ content, category, onTagsSelected }: C
 
               <div className="mt-3 flex space-x-2">
                 <button
+                  type="button"
                   onClick={() => addSuggestedTags(suggestions.slice(0, 3))}
                   className="px-3 py-1 bg-green-600 text-white text-sm rounded hover:bg-green-700"
                 >
                   Add Top 3
                 </button>
                 <button
+                  type="button"
                   onClick={() => addSuggestedTags(suggestions)}
                   className="px-3 py-1 bg-green-100 text-green-700 text-sm rounded hover:bg-green-200"
                 >
                   Add All
                 </button>
                 <button
+                  type="button"
                   onClick={() => {
                     setSuggestions([])
                     setHasAnalyzed(false)

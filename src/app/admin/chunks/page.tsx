@@ -71,7 +71,8 @@ export default function KnowledgeChunksPage() {
       }
 
       const data = await response.json()
-      setChunks(data.chunks || [])
+      // "Load More" (offset > 0) appends to the list; a fresh load replaces it
+      setChunks(prev => offset > 0 ? [...prev, ...(data.chunks || [])] : (data.chunks || []))
       setPagination(data.pagination)
 
     } catch (error) {

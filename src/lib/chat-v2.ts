@@ -7,7 +7,7 @@ import type { RateLimitResult } from './rate-limiter'
 /**
  * Single-prompt ("v2") chat handler.
  *
- * Experimental architecture that skips the RAG pipeline entirely: the whole
+ * Production-default architecture that skips the RAG pipeline entirely: the whole
  * active knowledge base rides in the system prompt (see full-context-prompt)
  * and guardrails are enforced through prompt instructions rather than
  * confidence tiers and validation calls. Emits the exact same SSE protocol
